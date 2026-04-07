@@ -42,6 +42,8 @@ select distinct market_segment from mig_raw_crm_reservations_clean;
 
 /* Correction Travel Purpose */ 
 
+-- waiting for matching definition 
+
 UPDATE crm_reservation_import_20260407 
 SET travel_purpose = CASE
     WHEN travel_purpose = 'Business'                          THEN 'Business'
@@ -66,15 +68,25 @@ SET travel_purpose = CASE
     WHEN travel_purpose = 'Promotion/CO-Marketing'            THEN null
     WHEN travel_purpose = 'TrustForce'                        THEN null
 
-    ELSE null
+    ELSE 'Other'
 END;
 
 
 
 select distinct travel_purpose, null as category  
-from mig_raw_crm_reservations_clean
+from crm_reservation_import_20260407
+-- from mig_raw_crm_reservations_clean
 where source = 'protel'
 
+select 
+		source,travel_purpose, count(*) as count_records
+from mig_raw_crm_reservations_clean
+group by travel_purpose, source
+order by 3 desc ;
+
+select * 
+from mig_raw_crm_reservations_clean
+where travel_purpose = 'Account'
 
 /* One Time FIX  for Revenues */ 
 
@@ -271,6 +283,8 @@ SELECT
 					)
 
 					
-					
+/** some other findings **/
 
+		select * from mig_raw_crm_reservations_clean 
+		where email like '%alexander.erbach@telekom.de/pn-invoice.tel-it@invoicedtse.telekom.d%'
 					
