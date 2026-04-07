@@ -25,7 +25,7 @@ logging.basicConfig(
 BULK_API_VERSION = "v62.0"
 EXTERNAL_ID_FIELD = "ReservationID__c"   # <-- External ID Feld auf Reservation__c
 OBJECT_NAME = "Reservation__c"
-BATCH_SIZE = 50                         # Bulk API 2.0 max: 150MB / Job, ca. 5k–10k Zeilen empfohlen
+BATCH_SIZE = 5000                         # Bulk API 2.0 max: 150MB / Job, ca. 5k–10k Zeilen empfohlen
 POLL_INTERVAL_SEC = 10
 MAX_POLL_ATTEMPTS = 60
 
@@ -236,7 +236,7 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
     reservations = db.fetch_all(
-        """ select * from crm_reservation_import_20260407 where row_id < 500 """
+        """ select * from crm_reservation_import_20260407 where row_id > 0 """
     )
     print(f"  → {len(reservations)} Reservierungen geladen")
 
