@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 
 # --- Logging Setup ---
-log_path = Path("logs/import_contacts_bulk_prod.log")
+log_path = Path("logs/import_loyalty_member_bulk.log")
 log_path.parent.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -22,8 +22,8 @@ logging.basicConfig(
 )
 
 # --- Constants ---
-EXTERNAL_ID_FIELD = "ClusterID__c"   # External ID Feld auf Account (Person Account)
-OBJECT_NAME = "Account"
+EXTERNAL_ID_FIELD = "ExternalMemberId__c"   # External ID Feld auf Account (Person Account)
+OBJECT_NAME = "LoyaltyProgramMember"
 BATCH_SIZE = 5000
 POLL_INTERVAL_SEC = 10
 MAX_POLL_ATTEMPTS = 60
@@ -47,42 +47,23 @@ def sf_datetime(value: Optional[Union[datetime, date]]) -> Optional[str]:
 
 
 def row_to_sf_record(row: dict) -> dict:
-    """Mappt eine MySQL-Zeile auf ein Salesforce Account (Person Account) Record Dict."""
+    """Mappt eine MySQL-Zeile auf ein Salesforce Loyalty Programm Member."""
     record = {
-        EXTERNAL_ID_FIELD:                  row.get('cluster_id'),
-        "RecordTypeId":                     "012Te0000018UgIIAU",
-        "ClusterID__pc":                    row.get('cluster_id'),
+        EXTERNAL_ID_FIELD:                  row.get('member_number_new'),
 
         # --- Source info ---
         "SourceSystem__c":                  row.get('source'),
 
-        # --- Contact (Person Account core fields) ---
-        "FirstName":                        row.get("clean_first_name"),
-        "LastName":                         row.get("clean_last_name"),
-        "Salutation":                       row.get("salutation"),
-        #"MiddleName":                       row.get("middle_name"),
+        # --- Member defaults ---
+        "ProgramId":                        "0lpTe000000004rIAA",
+        #"MemberType":                       "Individual",
+        "MemberStatus":                     "Active",
 
-        "PersonEmail":                      row.get("clean_email"),  #dev_email(row.get("email")),
-        "PersonMobilePhone":                row.get("phone"),
-
-        # --- Person demographics ---
-        "Birthdate":                  sf_datetime(row.get("birth_date")),
-        "PersonGenderIdentity":             row.get("gender"),
-
-        # --- Billing Address ---
-        "BillingStreet":                    row.get("address"),
-        "BillingCity":                      row.get("city"),
-        "BillingPostalCode":                row.get("postal_code"),
-        "BillingCountryCode__c":            row.get("country"),
-
-        # --- Contact fallback ---
-        "Phone":                            row.get("phone"),
-
-        # --- Custom Person fields (__pc) ---
-        "BirthPlace__pc":                   row.get("birth_place"),
-        "NationalityCountryCode__pc":       row.get("nationality"),
-        "PreferredLanguage__pc":            row.get("preferred_language"),
-        "SourceSystem__pc":                 row.get('source'),
+        # --- Member Account fields ---
+        "ContactId":                        row.get('sf_contact_id'),
+        "MembershipNumber":                 row.get('member_number_new'),
+        "LegacyMemberId__c":                row.get('legacy_member_number'),
+        "EnrollmentDate":                   sf_datetime(row.get('enrollment_date')),
     }
 
     # None-Werte entfernen
@@ -104,16 +85,7 @@ def records_to_csv(records: list[dict]) -> str:
     for record in records:
         writer.writerow(record)
 
-
-    # #debug
-    # path = 'local_data/contact_import.csv'
-    # with open(path, "w", encoding="utf-8") as f:
-    #     f.write(buf.getvalue())
-
     return buf.getvalue()
-
-
-
 
 
 def chunked(lst: list, size: int):
@@ -151,7 +123,7 @@ def fetch_failed_records(sf: SalesforceClientCC, job_id: str) -> list[dict]:
 
 
 def save_failed_records(failed: list[dict], batch_index: int) -> None:
-    out_path = Path(f"local_data/failed_contacts_batch_{batch_index}.json")
+    out_path = Path(f"local_data/failed_loyalty_batch_{batch_index}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(failed, f, indent=2)
@@ -160,12 +132,25 @@ def save_failed_records(failed: list[dict], batch_index: int) -> None:
 
 # --- Main ---
 def main():
-    print(f"import_contacts_bulk | start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"import_loyalty_bulk | start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # 1. Daten aus MySQL laden
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
-    accounts = db.fetch_all("select * from mig_crm_person_accounts_imp20260414 order by cluster_id")
+
+    accounts = db.fetch_all("""  select  
+                                        cluster_id,
+                                        sf_contact_id,
+                                        source,
+                                        member_id as legacy_member_number,
+                                        member_tier,
+                                        member_number_new,
+                                        enrollment_date
+                                        
+                                from mig_crm_person_accounts_imp20260414 
+                                where member_tier is not null 
+                                and sf_contact_id is not null  """)
+    
     print(f"  → {len(accounts)} Accounts geladen")
 
     # 2. Mapping
@@ -212,7 +197,7 @@ def main():
     print(f"  → Gesamt fehlgeschlagene Records: {len(total_failed)}")
 
     if total_failed:
-        all_failed_path = Path("local_data/batch/all_failed_contacts.json")
+        all_failed_path = Path("local_data/batch/all_failed_loyalty.json")
         with open(all_failed_path, "w") as f:
             json.dump(total_failed, f, indent=2)
         print(f"  → Alle Fehler gespeichert: {all_failed_path}")

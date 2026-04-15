@@ -1,6 +1,6 @@
 from config import load_mysql_config
 from mysql_client import MySQLClient
-from salesforce_client import SalesforceClientCC, load_salesforce_cc_config_from_env
+from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
 from datetime import datetime, timezone, time, date
 from typing import Optional, Union
 from tqdm import tqdm
@@ -56,13 +56,13 @@ def row_to_sf_record(row: dict) -> dict:
         "BookingID__c":                 row.get('booking_id'),
         "ReservationStatus__c":         row.get("reservation_status"),
         "MarketSegmentCode__c":         row.get('market_segment'),
-        "SourceSystem__c":              row.get('source_system'),
-        "Source__c":                    row.get('source_system'),
+        "SourceSystem__c":              row.get('source'),
+        "Source__c":                    row.get('source'),
         "ClusterID__c":                 row.get('cluster_id'),
         "RateCode__c":                  row.get('rate_plan_code'),
 
         # --- Consent ---
-        "ConsentCentral__c":            False,
+        "ConsentCentral__c":            bool(row.get('central_consent') or 0),
         "ConsentProperty__c":           True,
         #  Obsolete--> "IsPrimaryBooker__c":           True,
 
@@ -79,8 +79,8 @@ def row_to_sf_record(row: dict) -> dict:
         # --- Guest / occupancy ---
         "Adults__c":                    row.get('adults_num'),
         "ChildrenCount__c":             row.get('children_num'),
-        "Guest__c":                     row.get('person_account_id'),
-        "Contact__c":                    row.get('person_contact_id'),
+        "Guest__c":                     row.get('sf_person_account_id'),
+        "Contact__c":                   row.get('sf_person_contact_id'),
         "GuestRole__c":                 row.get('guest_role'),
 
         # --- Revenues ---
@@ -122,7 +122,7 @@ def row_to_sf_record(row: dict) -> dict:
         "ProfileFirstName__c":          row.get("first_name"),
         "ProfileMiddleName__c":         row.get("middle_name"),
         "ProfileLastName__c":           row.get("last_name"),
-        "ProfileEmail__c":              dev_email(row.get("email")),
+        "ProfileEmail__c":              row.get("email"),  #dev_email(row.get("email")),
         "ProfileMobilePhone__c":        row.get("phone"),
         "ProfileBirthdate__c":          sf_datetime(row.get("birth_date")),
         "ProfileBirthPlace__c":         row.get("birth_place"),
@@ -137,7 +137,7 @@ def row_to_sf_record(row: dict) -> dict:
         "ProfileMailingCountry__c":     row.get("country"),
 
         # --- Matching ---
-        "ProfileSourceSystem__c":       row.get('source_system'),
+        "ProfileSourceSystem__c":       row.get('source'),
     }
 
     # None-Werte entfernen (Bulk API: leerer String = Feldlöschung, None = weglassen)
@@ -236,7 +236,7 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
     reservations = db.fetch_all(
-        """ select * from crm_reservation_import_20260407 where row_id > 0 """
+        """ select * from mig_raw_crm_reservations_hist_imp20260414 limit 5000 """
     )
     print(f"  → {len(reservations)} Reservierungen geladen")
 

@@ -1,7 +1,7 @@
 from config import load_mysql_config
 from mysql_client import MySQLClient
 from transform_data import map_picklist
-from salesforce_client import SalesforceClientCC, load_salesforce_cc_config_from_env
+from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
 from datetime import datetime, timezone, time, date
 from typing import Any, Dict, Optional, Union
 from tqdm import tqdm
@@ -62,39 +62,43 @@ def sf_query_properties():
 
 def save_accounts_in_mysqL():
 
-    df = pd.read_parquet("local_data/accounts.parquet")
+    df = pd.read_parquet("local_data/accounts_prod.parquet")
 
 
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
-    db.create_table_from_df(df,'crm_person_account_sfid_uat', 'replace')
+    db.create_table_from_df(df,'crm_person_account_sfid_prod', 'replace')
 
 def save_properties_in_mysqL():
 
-    df = pd.read_parquet("local_data/properties.parquet")
+    df = pd.read_parquet("local_data/properties_prod.parquet")
 
 
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
-    db.create_table_from_df(df,'crm_properties_sfid_uat', 'replace')
+    db.create_table_from_df(df,'crm_properties_sfid_prod', 'replace')
 
 if __name__ == "__main__":
 
-    save_properties_in_mysqL()
+    # df_pro = sf_query_properties()
+    # df_pro.to_parquet("local_data/properties_prod.parquet", index=False)
+    # save_properties_in_mysqL()
 
-    # save_accounts_in_mysqL()
+    df_acc = sf_query_accounts()
+    df_acc.to_parquet("local_data/accounts_prod.parquet", index=False)
+    save_accounts_in_mysqL()
 
-    # df_acc = sf_query_accounts()
+ 
 
     # print(df_acc.head(5))
 
-    # df_acc.to_parquet("local_data/accounts.parquet", index=False)
+    
 
-    #df_pro = sf_query_properties()
+  
 
     # print(df_pro.head(5))
 
-    #df_pro.to_parquet("local_data/properties.parquet", index=False)
+    
 

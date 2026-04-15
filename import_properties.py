@@ -1,6 +1,7 @@
 from config import load_mysql_config
 from mysql_client import MySQLClient
 from transform_data import map_picklist
+#from salesforce_client import SalesforceClientCC, load_salesforce_cc_config_from_env
 from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
 from datetime import datetime, timezone, time, date
 from typing import Any, Dict, Optional, Union
@@ -11,7 +12,7 @@ import urllib.parse
 import random
 
 
-def ratescodes_payload() -> None:
+def property_payload() -> None:
 
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
@@ -19,12 +20,15 @@ def ratescodes_payload() -> None:
     # SELECT multiple rows
     records = db.fetch_all(
         """select 
-                coalesce(RCO_plan_name, RCO_crs_code) as Name,
-                RCO_crs_code as RateCode__c,
-                RCO_category as RateCodeCategory__c,
-                RCO_market_segment as RateType__c,
-                RCO_thematik as RateDescription__c
-           from V2I_RateCodeOverview;"""
+                    PAS_FMTG_ID as fmtg_id,
+                    PAS_code3 as apaleo_id,
+                    PAS_name_short as name_short,
+                    PAS_name_long  as name_long,
+                    PAS_Protel_ID as protel_id,
+                    PAS_pms as pms
+                    
+            from V2D_Property_Attributes vdpa
+            where is_active = 1;"""
     )
 
     cnt = len(records)
@@ -35,12 +39,13 @@ def ratescodes_payload() -> None:
     for row in records:
 
         payload = { 
-            'RateCode__c': row.get('RateCode__c'),
+            'FMTGID__c': row.get('fmtg_id'),
             'payload': { 
-                        'Name': row.get('Name'),
-                        'RateCodeCategory__c': row.get('RateCodeCategory__c'),
-                        'RateType__c': row.get('RateType__c'),
-                        'RateDescription__c': row.get('RateDescription__c')
+                        'Name': row.get('name_short'),
+                        'LongName__c': row.get('name_long'),
+                        'ApaleoID__c': row.get('apaleo_id'),
+                        'ProtelID__c': row.get('protel_id'),
+                        'PMS__c': row.get('pms'),
                         }
         }
 
@@ -59,14 +64,14 @@ def ratescodes_payload() -> None:
 
 if __name__ == "__main__":
 
-    rates_payload = ratescodes_payload()
+    payload = property_payload()
 
 
     cfg_sfcc = load_salesforce_cc_config_from_env()
     with SalesforceClientCC(cfg_sfcc) as sf:
         sf.authenticate()
 
-        for rate in tqdm(rates_payload, total=len(rates_payload)):
+        for property in tqdm(payload, total=len(payload)):
         
-            rate_id = sf.upsert_object_by_external_id('RateCode__c', 'RateCode__c', rate['RateCode__c'], rate['payload']) 
-            print(rate_id)
+            property_id = sf.upsert_object_by_external_id('Property__c', 'FMTGID__c', property['FMTGID__c'], property['payload']) 
+            print(property_id)

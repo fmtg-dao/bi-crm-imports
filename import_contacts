@@ -1,7 +1,7 @@
 from config import load_mysql_config
 from mysql_client import MySQLClient
 from transform_data import map_picklist
-from salesforce_client import SalesforceClientCC, load_salesforce_cc_config_from_env
+from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
 from datetime import datetime, timezone, time, date
 from typing import Any, Dict, Optional, Union
 from tqdm import tqdm
@@ -50,11 +50,6 @@ def sf_datetime(value: Optional[Union[datetime, date]]) -> Optional[str]:
 def account_person_row_to_payload() -> None:
 
     #
-    # SELECT cluster_id, _entity_id, first_name, last_name, email, birth_date, 
-    #  salutation, gender, middle_name, address, city, postal_code, country, 
-    #  phone, birth_place, nationality, `language`, member_id, member_tier, 
-    #  source_system, has_active_loyalty, preferred_language
-    # FROM int_crm_person_accounts;
     #
 
 
@@ -63,7 +58,7 @@ def account_person_row_to_payload() -> None:
 
     # SELECT multiple rows
     accounts = db.fetch_all(
-        """select * from int_crm_person_accounts"""
+        """select * from mig_crm_person_accounts_imp20260414 order by cluster_id asc limit 50"""
     )
     
     #"""select * from int_crm_person_accounts where cluster_id > 1000 order by cluster_id asc"""
@@ -80,17 +75,17 @@ def account_person_row_to_payload() -> None:
             'cluster_id': row.get('cluster_id'), 
                 'payload':  {
                     # --- Source info ---
-                    "SourceSystem__c": row.get('source_system'),
+                    "SourceSystem__c": row.get('source'),
                     "ClusterID__pc": row.get('cluster_id'),
 
                     # --- Contact (Person Account core fields) ---
-                    "FirstName": row.get("first_name"),
-                    "LastName": row.get("last_name"),
+                    "FirstName": row.get("clean_first_name"),
+                    "LastName": row.get("clean_last_name"),
                     "Salutation": row.get("salutation"),
-                    "MiddleName": row.get("middle_name"),
+                    #"MiddleName": row.get("middle_name"),
                     #"Suffix": None,
 
-                    "PersonEmail": dev_email(row.get("email")),
+                    "PersonEmail": dev_email(row.get("clean_email")),
                     "PersonMobilePhone": row.get("phone"),
                     #"PersonHomePhone": None,
                     #"PersonOtherPhone": None,
@@ -120,7 +115,7 @@ def account_person_row_to_payload() -> None:
                     # --- Custom Person fields (__pc) ---
                     "BirthPlace__pc": row.get("birth_place"),
                     "NationalityCountryCode__pc": row.get("nationality"),
-                    "PreferredLanguage__pc": row.get("preferred_language"),
+                    "PreferredLanguage__pc": row.get("language"),
                     #"RegionCode__pc": None,
                     "SourceSystem__pc": row.get('source_system'),
 
