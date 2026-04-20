@@ -440,6 +440,23 @@ class SalesforceClientCC:
         if r.status_code not in (200, 201):
             raise RuntimeError(f"Bulk create job failed ({r.status_code}): {r.text}")
         return r.json()["id"]
+    
+    def bulk_create_insert_job(self, object_name: str) -> str:
+        """
+        Erstellt einen Bulk API 2.0 Insert-Job.
+        Gibt die Job-ID zurück.
+        """
+        url = f"{self._base()}/jobs/ingest"
+        body = {
+            "object": object_name,
+            "operation": "insert",
+            "contentType": "CSV",
+            "lineEnding": "LF",
+        }
+        r = self._client.post(url, json=body)
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"Bulk create insert job failed ({r.status_code}): {r.text}")
+        return r.json()["id"]
 
     def bulk_upload_csv(self, job_id: str, csv_data: str) -> None:
         """

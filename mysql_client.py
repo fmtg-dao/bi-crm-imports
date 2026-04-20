@@ -138,7 +138,7 @@ class MySQLClient:
                 if pd.api.types.is_datetime64_any_dtype(dtype):
                     return "DATETIME"
 
-                return "TEXT"
+                return "VARCHAR(255)"
 
             if if_exists == "replace":
                 cur.execute(f"DROP TABLE IF EXISTS `{table_name}`")

@@ -82,13 +82,13 @@ def save_properties_in_mysqL():
 
 if __name__ == "__main__":
 
-    # df_pro = sf_query_properties()
-    # df_pro.to_parquet("local_data/properties_prod.parquet", index=False)
-    # save_properties_in_mysqL()
+    df_pro = sf_query_properties()
+    df_pro.to_parquet("local_data/properties_prod.parquet", index=False)
+    save_properties_in_mysqL()
 
-    df_acc = sf_query_accounts()
-    df_acc.to_parquet("local_data/accounts_prod.parquet", index=False)
-    save_accounts_in_mysqL()
+    # df_acc = sf_query_accounts()
+    # df_acc.to_parquet("local_data/accounts_prod.parquet", index=False)
+    # save_accounts_in_mysqL()
 
  
 

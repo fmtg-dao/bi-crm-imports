@@ -25,10 +25,11 @@ def property_payload() -> None:
                     PAS_name_short as name_short,
                     PAS_name_long  as name_long,
                     PAS_Protel_ID as protel_id,
+                    PAS_GMS_ID as jotform_id,
                     PAS_pms as pms
                     
             from V2D_Property_Attributes vdpa
-            where is_active = 1;"""
+            where is_active = 1 and PAS_GMS_ID is not null;"""
     )
 
     cnt = len(records)
@@ -41,11 +42,12 @@ def property_payload() -> None:
         payload = { 
             'FMTGID__c': row.get('fmtg_id'),
             'payload': { 
-                        'Name': row.get('name_short'),
-                        'LongName__c': row.get('name_long'),
-                        'ApaleoID__c': row.get('apaleo_id'),
-                        'ProtelID__c': row.get('protel_id'),
-                        'PMS__c': row.get('pms'),
+                        #'Name': row.get('name_short'),
+                        #'LongName__c': row.get('name_long'),
+                        #'ApaleoID__c': row.get('apaleo_id'),
+                        #'ProtelID__c': row.get('protel_id'),
+                        #'PMS__c': row.get('pms'),
+                        "JotformID__c":  row.get('jotform_id')
                         }
         }
 

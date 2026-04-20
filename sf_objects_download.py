@@ -1,0 +1,196 @@
+from config import load_mysql_config
+from mysql_client import MySQLClient
+from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
+import pandas as pd
+
+
+
+SF_DATE_FIELDS = {
+        'CreatedDate', 'LastModifiedDate', 'LastActivityDate', 
+        'LastViewedDate', 'LastReferencedDate', 'SystemModstamp',
+        'EmailBouncedDate', 'ConvertedDate', 'CaptureDate',
+        'EffectiveFrom', 'EffectiveTo', 'ActivityDate',
+        'CloseDate', 'StartDate', 'EndDate', 'Birthdate'
+    }
+
+# ACCOUNT 
+ACCOUNT_QUERY = """
+            SELECT Id, PersonContactId, PersonEmail, FirstName, LastName, ClusterID__pc
+            FROM Account
+        """
+
+ACCOUNT_PATH =  'local_data/sf_object_data/accounts_prod.parquet'
+
+ACCOUNT_TABLE = 'crm_person_account_sfid_prod'
+
+# LEAD
+
+LEAD_QUERY = """
+            SELECT id, FirstName, LastName, Title, Email, BillingEmail__c, HotelCustomer__c, MatchedContact__c, ClusterID__c
+            FROM Lead
+            WHERE IsDeleted = false
+            """
+
+LEAD_PATH = 'local_data/sf_object_data/leads_prod.parquet'
+
+LEAD_TABLE = 'crm_person_lead_sfid_prod'
+
+
+# PROPERTY 
+PROPERTY_QUERY = """
+            SELECT FIELDS(All) FROM PROPERTY__C LIMIT 200
+        """
+
+PROPERTY_PATH =  'local_data/sf_object_data/properties_prod.parquet'
+PROPERTY_TABLE = 'crm_properties_sfid_prod'
+
+
+# CONTACT POINT EMAIL
+
+CP_EMAIL_QUERY = """ 
+                SELECT EmailAddress, Id, ParentId, PartyID__c, LastModifiedDate, CreatedDate, SourceSystem__c
+                FROM ContactPointEmail
+                WHERE IsDeleted = false
+            """
+
+CP_EMAIL_PATH = 'local_data/sf_object_data/cp_email_prod.parquet'
+CP_EMAIL_TABLE = 'crm_cp_email_sfid_prod'
+
+
+# CONTACT POINT CONSENT
+CP_CONSENT_QUERY = """SELECT Id, Name, ContactPointId, PrivacyConsentStatus, CaptureSource, CaptureDate, 
+                            EffectiveFrom, EffectiveTo, PartyId, ConsentKey__c, Property__c, SourceSystem__c, LastModifiedDate, CreatedDate
+                    FROM ContactPointConsent
+                    WHERE IsDeleted = false
+                    """
+
+CP_CONSENT_PATH = 'local_data/sf_object_data/cp_consent_prod.parquet'
+CP_CONSENT_TABLE = 'crm_cp_consent_sfid_prod'
+
+# RESERVATIONS 
+RESERVATION_QUERY = """SELECT Id, Name, ReservationID__c, ReservationStatus__c, SourceSystem__c,  CreatedDate, LastModifiedDate, BookingID__c, CRSBookingID__c, 
+                            Guest__c, Contact__c, Lead__c,  ProfileEmail__c, ProfileFirstName__c, ProfileLastName__c, ProfileBirthdate__c 
+                    FROM Reservation__c
+                    where IsDeleted = false
+                    """
+
+RESERVATION_PATH = 'local_data/sf_object_data/reservation_prod.parquet'
+
+RESERVATION_TABLE = 'crm_reservation_sfid_prod'
+
+
+
+
+def sf_query(soql_query:str) -> pd.DataFrame:
+    cfg = load_salesforce_cc_config_from_env()
+
+    with SalesforceClientCC(cfg) as sf:
+        sf.authenticate()
+
+        q = sf.query_all(soql_query)
+
+        records = q.get("records", [])
+
+        # remove Salesforce metadata
+        cleaned = [
+            {k: v for k, v in r.items() if k != "attributes"}
+            for r in records
+        ]
+
+        df = pd.DataFrame(cleaned)
+
+        return df
+    
+def save_object_in_mysqL(local_path:str, table_name:str, if_exists:str='replace'):
+
+    df = pd.read_parquet(local_path)
+
+  
+    for col in df.columns:
+        if col in SF_DATE_FIELDS:
+            df[col] = pd.to_datetime(df[col], utc=True)
+        else:
+            df[col] = df[col].astype('string')
+
+    cfg_mysql = load_mysql_config()
+    db = MySQLClient(cfg_mysql)
+
+    db.create_table_from_df(df, table_name, if_exists)
+
+
+def create_consent_df() -> pd.DataFrame:
+
+    df_cpc = pd.read_parquet(CP_CONSENT_PATH)
+    df_cpe = pd.read_parquet(CP_EMAIL_PATH)
+    df_acc = pd.read_parquet(ACCOUNT_PATH)
+
+    df_acc_slim = df_acc[['Id', 'PersonContactId', 'FirstName', 'LastName', 'ClusterID__pc']].rename(columns={'Id': 'AccountId', 'ClusterID__pc': 'ClusterID' })
+    
+    df_cpe_slim = df_cpe[['Id', 'EmailAddress', 'PartyID__c', ]]
+
+    
+    df_cpc_slim = df_cpc[['Id', 'Name', 'ContactPointId', 'PrivacyConsentStatus', 'CaptureSource', 'CaptureDate',
+                        'EffectiveFrom', 'EffectiveTo', 'PartyId', 'ConsentKey__c', 'Property__c', 'SourceSystem__c',
+                        'LastModifiedDate', 'CreatedDate']]
+
+
+    df_merged = (
+        df_cpc_slim
+        .merge(df_cpe_slim, left_on='ContactPointId', right_on='Id', suffixes=('', '_cpe'), how='left')
+        .merge(df_acc_slim, left_on='PartyID__c', right_on='PersonContactId', how='left')
+    )
+    
+    df_merged['PartyType'] = df_merged['PartyID__c'].str[:3].map({ 
+                                                            '001': 'Account',
+                                                            '003': 'Contact',
+                                                            '00Q': 'Lead'
+                                                        })
+
+    date_cols = ['CaptureDate', 'EffectiveFrom', 'EffectiveTo', 'LastModifiedDate', 'CreatedDate']
+
+    for col in df_merged.columns:
+        if col in date_cols:
+            df_merged[col] = pd.to_datetime(df_merged[col], utc=True)
+        else:
+            df_merged[col] = df_merged[col].astype('string')
+
+    return df_merged
+
+
+
+
+
+if __name__ == "__main__":
+
+    # Account 
+    df_acc = sf_query(ACCOUNT_QUERY)
+    df_acc.to_parquet(ACCOUNT_PATH, index=False)
+    save_object_in_mysqL(ACCOUNT_PATH,ACCOUNT_TABLE)
+
+    # # Lead
+    # df_acc = sf_query(LEAD_QUERY)
+    # df_acc.to_parquet(LEAD_PATH, index=False)
+    # #save_object_in_mysqL(LEAD_PATH,LEAD_TABLE)
+
+    # Reservation
+    #df_acc = sf_query(RESERVATION_QUERY)
+    #df_acc.to_parquet(RESERVATION_PATH, index=False)
+    #save_object_in_mysqL(RESERVATION_PATH, RESERVATION_TABLE)
+
+    # CPE  
+    df_acc = sf_query(CP_EMAIL_QUERY)
+    df_acc.to_parquet(CP_EMAIL_PATH, index=False)
+    save_object_in_mysqL(CP_EMAIL_PATH,CP_EMAIL_TABLE)
+
+ 
+    # # CPC  
+    df_acc = sf_query(CP_CONSENT_QUERY)
+    df_acc.to_parquet(CP_CONSENT_PATH, index=False)
+    save_object_in_mysqL(CP_CONSENT_PATH,CP_CONSENT_TABLE)
+
+    # Consent 
+    df_consent = create_consent_df()
+    df_consent.to_parquet('local_data/sf_object_data/consent_prod.parquet', index=False)
+    save_object_in_mysqL('local_data/sf_object_data/consent_prod.parquet','crm_consent_sfid_prod')
+
+    # print(df_consent.dtypes)

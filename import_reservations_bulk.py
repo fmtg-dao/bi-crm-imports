@@ -236,7 +236,7 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
     reservations = db.fetch_all(
-        """ select * from mig_raw_crm_reservations_hist_imp20260414 limit 5000 """
+        """ select * from mig_raw_crm_reservations_future_unmached_imp20260415  """
     )
     print(f"  → {len(reservations)} Reservierungen geladen")
 

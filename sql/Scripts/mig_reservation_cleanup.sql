@@ -518,6 +518,7 @@ where r.sf_person_contact_id is not null
 	and r.children_num = 0
 	
 -- history reservertaion ohne invest
+drop table mig_raw_crm_reservations_hist_imp20260414
 CREATE TABLE mig_raw_crm_reservations_hist_imp20260414 AS
 SELECT r.*
 FROM mig_raw_crm_reservations_clean r
@@ -530,7 +531,28 @@ WHERE r.sf_person_contact_id IS NOT NULL
   AND p.is_investor = 0;
 
 
-select * from mig_raw_crm_reservations_hist_imp20260414
+select * from mig_raw_crm_reservations_hist_imp20260414 where central_consent = 1
+
+select * from mig_crm_person_accounts_imp20260414 order by cluster_id
+
+CREATE TABLE mig_raw_crm_reservations_future_unmached_imp20260415 AS
+select r.* 
+from mig_raw_crm_reservations_clean r
+where r.reservation_status not in ('CheckedOut', 'Cancelled')
+and r.market_segment in ('INDIVIDUAL', 'OTA')
+and email is not null
+and email not in ('admin@motorhometours.co.uk')
+and r.sf_property_id is not null
+and r.sf_person_contact_id is null
+and r.is_investor = 0
+and r.booking_id is not null
+and r.arrival_at > '2026-04-16'
+and not exists ( select 1 
+					from mig_raw_crm_reservations_hist_imp20260414 i where r.reservation_id = i.reservation_id  )
+and not exists ( select 1 
+					from mig_raw_crm_reservations_future_imp20260414 f where r.reservation_id = f.reservation_id  )
+
+
 
 
 -- future ohne inverst
@@ -552,3 +574,83 @@ UPDATE   mig_raw_crm_reservations_future_imp20260414
 set sf_person_contact_id = null, sf_person_account_id = null
 
 	
+select * 
+from mig_raw_crm_reservations_future_imp20260414 
+limit 100
+
+
+-- set sf ids 
+update mig_raw_crm_reservations_clean c
+ inner join crm_reservation_sfid_prod s 
+ 	on s.ReservationID__c = c.reservation_id 
+ set c.sf_reservation_id = s.Id
+ where c.sf_reservation_id is  null
+
+
+/*** Analysen  ***/
+CREATE INDEX `idx_cluster_id` ON `mig_raw_crm_reservations_future_imp20260414` (`cluster_id`);
+CREATE INDEX `idx_cluster_id` ON `mig_raw_crm_reservations_hist_imp20260414` (`cluster_id`);
+
+
+update mig_raw_crm_reservations_clean r
+set r.central_consent = 1
+where exists ( 
+			select 1 
+			from gms_all_profiles gap 
+			where gap.current_opt_in = 'Yes'
+			and gap.cluster_id = r.cluster_id
+)
+
+
+update mig_raw_crm_reservations_future_imp20260414 r
+set r.central_consent = 1
+where exists ( 
+			select 1 
+			from gms_all_profiles gap 
+			where gap.current_opt_in = 'Yes'
+			and gap.cluster_id = r.cluster_id
+)
+
+
+select count(*) 
+from mig_raw_crm_reservations_future_imp20260414 r
+where exists ( 
+			select 1 
+			from gms_all_profiles gap 
+			where gap.current_opt_in = 'Yes'
+			and gap.cluster_id = r.cluster_id
+)
+
+
+select count(*) 
+from gms_all_profiles gap 
+where gap.exclude_email = 0
+and gap.bounce = 'No'
+and gap.current_opt_in = 'Yes'
+and gap.cluster_id is not null
+and exists ( select 1 from mig_raw_crm_reservations_clean r WHERE  r.cluster_id = gap.cluster_id and r.central_consent = 1 )
+
+select count(*) 
+from gms_all_profiles gap
+where gap.exclude_email = 0
+and gap.bounce = 'No'
+and gap.cluster_id is null
+
+select count(*) from mig_raw_crm_reservations_clean mrcrc  
+
+
+select central_consent, count(distinct email)
+from mig_raw_crm_reservations_clean
+group by central_consent 
+
+select count(distinct email)
+from mig_raw_crm_reservations_clean
+where is_investor = 1
+
+select source, count(*) 
+from mig_crm_person_accounts_imp20260414 mcpai
+group by source
+
+select distinct market_segment  
+
+from mig_raw_crm_reservations_clean

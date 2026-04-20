@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 
 # --- Logging Setup ---
-log_path = Path("logs/import_contacts_bulk_prod.log")
+log_path = Path("logs/import_consent_member_bulk.log")
 log_path.parent.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -22,8 +22,7 @@ logging.basicConfig(
 )
 
 # --- Constants ---
-EXTERNAL_ID_FIELD = "ClusterID__c"   # External ID Feld auf Account (Person Account)
-OBJECT_NAME = "Account"
+OBJECT_NAME = "ContactPointConsent"
 BATCH_SIZE = 5000
 POLL_INTERVAL_SEC = 10
 MAX_POLL_ATTEMPTS = 60
@@ -47,43 +46,17 @@ def sf_datetime(value: Optional[Union[datetime, date]]) -> Optional[str]:
 
 
 def row_to_sf_record(row: dict) -> dict:
-    """Mappt eine MySQL-Zeile auf ein Salesforce Account (Person Account) Record Dict."""
+    """Mappt eine MySQL-Zeile auf ein Salesforce Consent."""
     record = {
-        EXTERNAL_ID_FIELD:                  row.get('cluster_id'),
-        "RecordTypeId":                     "012Te0000018UgIIAU",
-        "ClusterID__pc":                    row.get('cluster_id'),
-
-        # --- Source info ---
-        "SourceSystem__c":                  row.get('source'),
-        "InvestCustomer__pc":               bool(row.get('is_investor') or 0),
-
-        # --- Contact (Person Account core fields) ---
-        "FirstName":                        row.get("clean_first_name"),
-        "LastName":                         row.get("clean_last_name"),
-        "Salutation":                       row.get("salutation"),
-        #"MiddleName":                      row.get("middle_name"),
-
-        "PersonEmail":                      row.get("clean_email"),  #dev_email(row.get("email")),
-        "PersonMobilePhone":                row.get("phone"),
-
-        # --- Person demographics ---
-        "Birthdate":                        sf_datetime(row.get("birth_date")),
-        "PersonGenderIdentity":             row.get("gender"),
-
-        # --- Billing Address ---
-        "BillingStreet":                    row.get("address"),
-        "BillingCity":                      row.get("city"),
-        "BillingPostalCode":                row.get("postal_code"),
-        "BillingCountryCode__c":            row.get("country"),
-
-        # --- Contact fallback ---
-        "Phone":                            row.get("phone"),
-
-        # --- Custom Person fields (__pc) ---
-        "BirthPlace__pc":                   row.get("birth_place"),
-        "NationalityCountryCode__pc":       row.get("nationality"),
-        "PreferredLanguage__pc":            row.get("language"),
-        "SourceSystem__pc":                 row.get('source'),
+        "Name": "marketing_central",
+        "ContactPointId": row.get("cpe_id"),
+        "CaptureDate": sf_datetime(date.today()),
+        "CaptureSource": "gms" ,
+        "PrivacyConsentStatus": "OptIn",
+        "DataUsePurposeId": '0ZWTe0000000X7FOAU',
+        "EffectiveFrom": sf_datetime(date.today()),
+        #"EffectiveTo": None,
+        "SourceSystem__c": row.get("source"),
     }
 
     # None-Werte entfernen
@@ -95,9 +68,7 @@ def records_to_csv(records: list[dict]) -> str:
     if not records:
         return ""
 
-    all_keys = [EXTERNAL_ID_FIELD] + sorted(
-        {k for r in records for k in r if k != EXTERNAL_ID_FIELD}
-    )
+    all_keys = sorted({k for r in records for k in r})
 
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=all_keys, extrasaction='ignore', lineterminator="\n")
@@ -105,16 +76,7 @@ def records_to_csv(records: list[dict]) -> str:
     for record in records:
         writer.writerow(record)
 
-
-    # #debug
-    # path = 'local_data/contact_import.csv'
-    # with open(path, "w", encoding="utf-8") as f:
-    #     f.write(buf.getvalue())
-
     return buf.getvalue()
-
-
-
 
 
 def chunked(lst: list, size: int):
@@ -152,7 +114,7 @@ def fetch_failed_records(sf: SalesforceClientCC, job_id: str) -> list[dict]:
 
 
 def save_failed_records(failed: list[dict], batch_index: int) -> None:
-    out_path = Path(f"local_data/failed_contacts_batch_{batch_index}.json")
+    out_path = Path(f"local_data/failed_consent_batch_{batch_index}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(failed, f, indent=2)
@@ -161,12 +123,23 @@ def save_failed_records(failed: list[dict], batch_index: int) -> None:
 
 # --- Main ---
 def main():
-    print(f"import_contacts_bulk | start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"import_consent_bulk | start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # 1. Daten aus MySQL laden
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
-    accounts = db.fetch_all("select * from mig_crm_person_accounts_imp20260420")
+
+    accounts = db.fetch_all("""  select distinct Id as cpe_id, 'gms' as 'source'
+                                    from crm_cp_email_sfid_prod cpe
+                                    inner join gms_all_profiles gap 
+                                        on gap.email = cpe.EmailAddress
+                                    where gap.current_opt_in = 'Yes'
+                                    and not exists (select 1 from crm_consent_sfid_prod c 
+                                                        where Name = 'marketing_central' 
+                                                        and cpe.EmailAddress = c.EmailAddress)  
+                                
+                            """)
+    
     print(f"  → {len(accounts)} Accounts geladen")
 
     # 2. Mapping
@@ -185,7 +158,7 @@ def main():
             print(f"\nBatch {i+1}/{len(batches)} | {len(batch)} Records")
 
             try:
-                job_id = sf.bulk_create_job(OBJECT_NAME, EXTERNAL_ID_FIELD)
+                job_id = sf.bulk_create_insert_job(OBJECT_NAME)
                 print(f"  → Job erstellt: {job_id}")
 
                 csv_data = records_to_csv(batch)
@@ -209,11 +182,11 @@ def main():
                 logging.exception(f"Batch {i+1} | Unerwarteter Fehler")
                 print(f"  ✗ Batch {i+1} Fehler: {e}")
 
-    print(f"\nimport_contacts_bulk | end: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\nimport_consent_bulk | end: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  → Gesamt fehlgeschlagene Records: {len(total_failed)}")
 
     if total_failed:
-        all_failed_path = Path("local_data/batch/all_failed_contacts.json")
+        all_failed_path = Path("local_data/batch/all_failed_consent.json")
         with open(all_failed_path, "w") as f:
             json.dump(total_failed, f, indent=2)
         print(f"  → Alle Fehler gespeichert: {all_failed_path}")
