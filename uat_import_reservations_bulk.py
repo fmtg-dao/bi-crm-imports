@@ -1,6 +1,6 @@
 from config import load_mysql_config
 from mysql_client import MySQLClient
-from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
+from salesforce_client import SalesforceClientCC, load_salesforce_cc_config_from_env
 from datetime import datetime, timezone, time, date
 from typing import Optional, Union
 from tqdm import tqdm
@@ -52,9 +52,6 @@ def row_to_sf_record(row: dict) -> dict:
     record = {
         EXTERNAL_ID_FIELD:              row.get('reservation_id'),
 
-        # --- Loyalty Points calculation disabled -- 
-        "LoyaltyPointsAwarded__c":      True,
-
         # --- Reservation core ---
         "BookingID__c":                 row.get('booking_id'),
         "ReservationStatus__c":         row.get("reservation_status"),
@@ -82,8 +79,8 @@ def row_to_sf_record(row: dict) -> dict:
         # --- Guest / occupancy ---
         "Adults__c":                    row.get('adults_num'),
         "ChildrenCount__c":             row.get('children_num'),
-        # -> not in final #"Guest__c":                     row.get('sf_person_account_id'),
-        # -> not in final #"Contact__c":                   row.get('sf_person_contact_id'),
+        #"Guest__c":                     row.get('sf_person_account_id'),
+        #"Contact__c":                   row.get('sf_person_contact_id'),
         "GuestRole__c":                 row.get('guest_role'),
 
         # --- Revenues ---
@@ -96,7 +93,7 @@ def row_to_sf_record(row: dict) -> dict:
 
 
         # --- Property ---
-        "Property__c":                  row.get('sf_property_id'),
+        "Property__c":                  row.get('sf_property_id_uat'),
 
         # --- Channel / CRS ---
         "ChannelCode__c":               row.get('market_channel'),
@@ -108,25 +105,24 @@ def row_to_sf_record(row: dict) -> dict:
         "TravelPurpose__c":             row.get('travel_purpose'),
 
         # --- Company ---
-        # "BookerCompany__c":             None,
-        # "CompanyName__c":               None,
-        # "CompanyTaxID__c":              None,
-        # "CompanyRegisterNumber__c":     None,
+        "BookerCompany__c":             None,
+        "CompanyName__c":               None,
+        "CompanyTaxID__c":              None,
+        "CompanyRegisterNumber__c":     None,
         "CompanyID__c":                 row.get('booker_company_id'),
-        # "CompanyDebitorID__c":          None,
-        # "CompanyIATACode__c":           None,
-        # "CompanyGDSID__c":              None,
-        # "CompanyiHotelierID__c":        None,
-        # "CompanyBillingEmail__c":       None,
-        # "CompanyBillingCountry__c":     None,
+        "CompanyDebitorID__c":          None,
+        "CompanyIATACode__c":           None,
+        "CompanyGDSID__c":              None,
+        "CompanyiHotelierID__c":        None,
+        "CompanyBillingEmail__c":       None,
+        "CompanyBillingCountry__c":     None,
 
         # --- Profile identity ---
         "ProfileTitle__c":              row.get("salutation"),
         "ProfileFirstName__c":          row.get("first_name"),
         "ProfileMiddleName__c":         row.get("middle_name"),
         "ProfileLastName__c":           row.get("last_name"),
-        "ProfileEmail__c":              None if row.get("is_email_invalid") else row.get("email"),   # row.get("email"),  #dev_email(row.get("email")),
-        "ProfileEmailRaw__c":           row.get("email"),
+        "ProfileEmail__c":              row.get("email"),  #dev_email(row.get("email")),
         "ProfileMobilePhone__c":        row.get("phone"),
         "ProfileBirthdate__c":          sf_datetime(row.get("birth_date")),
         "ProfileBirthPlace__c":         row.get("birth_place"),
@@ -137,7 +133,7 @@ def row_to_sf_record(row: dict) -> dict:
         # --- Profile address ---
         "ProfileMailingStreet__c":      row.get("address"),
         "ProfileMailingPostalCode__c":  row.get("postal_code"),
-        "ProfileMailingCity__c":        (row.get("city") or "")[:40] or None, # make it fit   #row.get("city"),
+        "ProfileMailingCity__c":        row.get("city"),
         "ProfileMailingCountry__c":     row.get("country"),
 
         # --- Matching ---
@@ -145,11 +141,7 @@ def row_to_sf_record(row: dict) -> dict:
     }
 
     # None-Werte entfernen (Bulk API: leerer String = Feldlöschung, None = weglassen)
-    #return {k: v for k, v in record.items() if v is not None}
-    if not record.get(EXTERNAL_ID_FIELD):
-        raise ValueError(f"Missing {EXTERNAL_ID_FIELD} in row: {row}")
-    
-    return {k: ("" if v is None else v) for k, v in record.items()}
+    return {k: v for k, v in record.items() if v is not None}
 
 
 def records_to_csv(records: list[dict]) -> str:
@@ -244,12 +236,7 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
     reservations = db.fetch_all(
-        """select *
-                from mig_raw_crm_reservations_clean r
-                where r.reservation_status = 'Confirmed' 
-                and r.sf_reservation_id is null
-                and r.departure_at >= '2026-05-03' 
-                and r._excluded = 0 """
+        """ select * from mig_raw_crm_reservations_uat_imp20260424_match  """
     )
     print(f"  → {len(reservations)} Reservierungen geladen")
 

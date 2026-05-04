@@ -1,6 +1,19 @@
 
 /* Prepare Table */ 
 
+
+
+
+delete
+ from mig_raw_crm_reservations_21 r  
+where exists ( select * from mig_raw_crm_reservations_clean c where c.reservation_id = r.reservation_id  )
+
+select * from mig_raw_crm_reservations_clean
+
+select count(*) from mig_raw_crm_reservations_21 mrcr 
+-- 4279337
+select count(*) from mig_raw_crm_reservations_iw mrcr 
+
 /* ->> CHECK TABLE NAME <<- */
 
 ALTER TABLE `mig_raw_crm_reservations_clean`
@@ -9,17 +22,19 @@ ADD INDEX `idx_reservation_id` (`reservation_id`);
 ALTER TABLE `mig_raw_crm_reservations_clean`
 ADD INDEX `idx_email` (`email`);
 
+ALTER TABLE `mig_raw_crm_reservations_clean`
+ADD INDEX `idx_external_code` (`external_code`);
 
-ALTER TABLE `gms_all_profiles`
-MODIFY COLUMN `email` VARCHAR(255);
 
-ALTER TABLE `gms_all_profiles`
-ADD INDEX `idx_email` (`email`);
 
+
+
+
+select * from crm_protel_reservation_events 
 
 /* set checkin, checkout and cancelled, noshow */
 
-UPDATE mig_raw_crm_reservations_iw r
+UPDATE mig_raw_crm_reservations_21 r
 INNER JOIN crm_protel_reservation_events e
     ON r.reservation_id = e.buchnr
 
@@ -35,7 +50,7 @@ WHERE
 
 /* Update Segments */ 
 
-UPDATE mig_raw_crm_reservations_iw
+UPDATE mig_raw_crm_reservations_21
 SET market_segment = CASE
     WHEN market_segment = 'Individual'       THEN 'INDIVIDUAL'
     WHEN market_segment = 'Agent/FIT'        THEN 'FIT'
@@ -61,7 +76,7 @@ select distinct market_segment from mig_raw_crm_reservations_clean;
 
 -- waiting for matching definition 
 
-UPDATE mig_raw_crm_reservations_iw
+UPDATE mig_raw_crm_reservations_21
 SET travel_purpose = CASE
     WHEN travel_purpose = 'Business'                          THEN 'Business'
     WHEN travel_purpose = 'Account'                           THEN null
@@ -92,7 +107,7 @@ END;
 
 select 
 		source,travel_purpose, count(*) as count_records
-from mig_raw_crm_reservations_iw
+from mig_raw_crm_reservations_21
 group by travel_purpose, source
 order by 3 desc ;
 
@@ -106,12 +121,12 @@ where travel_purpose = 'Account'
 -- cancelled
 /* >>> make sure to normalize status before this <<< */
 
-select * from mig_raw_crm_reservations_clean
+select * from mig_raw_crm_reservations_21
 where reservation_status <> 'Cancelled'
 and cancelled_at is not null;
 
 
-update mig_raw_crm_reservations_clean
+update mig_raw_crm_reservations_21
 set reservation_status = 'Cancelled'
 where reservation_status <> 'Cancelled'
 and cancelled_at is not null;
@@ -123,7 +138,7 @@ where reservation_status <> 'NoShow'
 and noshow_at is not null;
 
 
-update mig_raw_crm_reservations_clean
+update mig_raw_crm_reservations_21
 set reservation_status = 'NoShow'
 where reservation_status <> 'NoShow'
 and noshow_at is not null;
@@ -148,7 +163,7 @@ select distinct reservation_status from mig_raw_crm_reservations_clean
 select * from crm_properties_sfid_uat
 
 -- protel
-update mig_raw_crm_reservations_clean c
+update mig_raw_crm_reservations_21 c
 inner join V2D_Property_Attributes pr 
 	on pr.PAS_Protel_ID = c.property_protel_id 
 inner join crm_properties_sfid_uat p
@@ -176,7 +191,7 @@ group by c.property_protel_id, pr.PAS_name_short
 
 
 -- apaleo
-update mig_raw_crm_reservations_clean c
+update mig_raw_crm_reservations_21 c
 inner join crm_properties_sfid_uat p 
 on p.ApaleoID__c = c.property_id 
 set sf_property_id =  p.Id 
@@ -277,15 +292,19 @@ SELECT
 
 					
 /** Remove invalid emails **/
+					
+update mig_raw_crm_reservations_21
+set email = LOWER(TRIM(email))
+where email is not null
 
 SELECT 
     reservation_id,
     email
-FROM mig_raw_crm_reservations_clean
-WHERE arrival_at > '2025-01-01'
+FROM mig_raw_crm_reservations_21
+WHERE 1=1
   AND email IS NOT NULL
-  AND email NOT REGEXP '^[^@\\s,]+@[^@\\s]+\\.[^@\\s]{2,}$';
-
+  AND email NOT REGEXP '^[^@\\s,]+@[^@\\s]+\\.[^@\\s]{2,}$'
+  and email = 'javichamoso@gmail.com'
 
 select count() 
 from  mig_raw_crm_reservations_clean
@@ -308,13 +327,33 @@ ADD COLUMN `central_consent` tinyint(1) unsigned NOT NULL DEFAULT 0;
 /*** Update central consent hotelbird ***/
 
 SELECT count(*)
-FROM mig_raw_crm_reservations_clean r
+FROM mig_raw_crm_reservations_21 r
 WHERE EXISTS (
 		select 1 
 		from raw_hotelbird_newsletter_consent c
 		where newsletter_consent = 1
 		and c.reservation_id = r.reservation_id
 );
+
+UPDATE mig_raw_crm_reservations_21 r
+SET central_consent = 1 
+WHERE EXISTS (
+		select 1 
+		from raw_hotelbird_newsletter_consent c
+		where newsletter_consent = 1
+		and c.reservation_id = r.reservation_id
+);
+
+
+UPDATE mig_raw_crm_reservations_iw r
+SET central_consent = 1 
+WHERE EXISTS (
+		select 1 
+		from raw_hotelbird_newsletter_consent c
+		where newsletter_consent = 1
+		and c.reservation_id = r.reservation_id
+);
+
 
 UPDATE mig_raw_crm_reservations_clean r
 SET central_consent = 1 
@@ -326,20 +365,11 @@ WHERE EXISTS (
 );
 
 
-UPDATE mig_raw_crm_reservations_iw r
-SET central_consent = 1 
-WHERE EXISTS (
-		select 1 
-		from raw_hotelbird_newsletter_consent c
-		where newsletter_consent = 1
-		and c.reservation_id = r.reservation_id
-);
-
 
 /*** Update central consent gms profile ***/
 
 
-select count(*) from  mig_raw_crm_reservations_iw r
+select count(*) from  mig_raw_crm_reservations_21 r
 WHERE EXISTS (
 			select 1 
 			from gms_all_profiles gap 
@@ -350,7 +380,7 @@ WHERE EXISTS (
 );
 
 
-UPDATE mig_raw_crm_reservations_iw r
+UPDATE mig_raw_crm_reservations_21 r
 SET central_consent = 1 
 WHERE EXISTS (
 			select 1 
@@ -383,7 +413,7 @@ ADD INDEX `idx_email` (`email`);
 
 /*** update investor flag on reservation ***/
 
-update `mig_raw_crm_reservations_clean` r
+update `mig_raw_crm_reservations_21` r
 set r.is_investor = 1
 WHERE EXISTS (
     SELECT 1
@@ -457,7 +487,18 @@ set r.sf_person_account_id = s.Id,
 	r.sf_person_contact_id = s.PersonContactId 
 
 
+update mig_raw_crm_reservations_clean r
+inner join crm_reservation_sfid_prod s
+	on r.reservation_id = s.ReservationID__c
+set r.sf_reservation_id = s.Id
+where r.sf_reservation_id is null
 
+
+
+select count(*) 
+from mig_raw_crm_reservations_clean r
+inner join crm_reservation_sfid_prod s
+	on r.reservation_id = s.ReservationID__c
 
 /*** add property id ***/
 -- sf_property_id
@@ -492,6 +533,8 @@ inner join crm_properties_sfid_prod p
 set r.sf_property_id = p.Id
 where r.source = 'protel'
 
+
+select * from mig_raw_crm_reservations_clean  where source = 'apaleo'
 
 update mig_raw_crm_reservations_clean r
 inner join crm_properties_sfid_prod p
@@ -555,7 +598,7 @@ and not exists ( select 1
 
 
 
--- future ohne inverst
+-- future ohne invest
 drop table mig_raw_crm_reservations_future_imp20260414
 CREATE TABLE mig_raw_crm_reservations_future_imp20260414 AS
 SELECT r.*
@@ -586,8 +629,59 @@ update mig_raw_crm_reservations_clean c
  set c.sf_reservation_id = s.Id
  where c.sf_reservation_id is  null
 
+ 
+ 
+/*** Appartment & VILLA FIX   ***/  
+ 
+select * from mig_raw_crm_reservations_clean rc
+where rc.property_protel_id = 100
+	and unit_group_code in ('AVA', 'AVD', 'AVT','AVZ')
+ 
 
-/*** Analysen  ***/
+-- Punta Skala Villas	
+update mig_raw_crm_reservations_clean rc
+set 
+	property_id = 'FPV', 
+	property_protel_id = 100, 
+	property_fmtg_id = '500541',
+	sf_property_id = 'a0QTe00000La2X3MAJ'
+where rc.property_protel_id = 14 
+	and unit_group_code in ('AVA', 'AVD', 'AVH', 'AVT','AVZ')
+	
+	
+	
+/*** Analysen  ***/	
+	
+	
+ 
+ select * from  mig_raw_crm_reservations_clean rc
+
+ select rc.property_id, rc.property_protel_id, rc.property_fmtg_id, ghr.GHR_mpehotel, rc.*  
+ from mig_raw_crm_reservations_clean rc
+ inner join V2I_GuestHistoryReservation ghr
+ 	on rc.reservation_id = ghr.GHR_leistacc
+ where rc.source = 'protel'
+ and ghr.GHR_mpehotel <> rc.property_protel_id
+ -- and ghr.GHR_mpehotel = 100
+ and rc.sf_reservation_id is not null
+ 
+ 
+ select * from V2D_Property_Attributes vdpa 
+ 
+ select * from mig_raw_crm_reservations_clean where email = 'ulrike@rapatz.com'
+ 
+ select * from gms_all_profiles gap where gap.email = 'ulrike@rapatz.com'
+ 
+ select * from gms_loyalty_liability gll where gll.list_id = '757041461'
+ 
+ select * 
+ from V2I_GuestHistoryReservation vighr 
+ where vighr.GHR_mpehotel = 101
+ 
+ select * from mig_raw_crm_reservations_clean where unit_group_code like '%APP%'
+ 
+
+
 CREATE INDEX `idx_cluster_id` ON `mig_raw_crm_reservations_future_imp20260414` (`cluster_id`);
 CREATE INDEX `idx_cluster_id` ON `mig_raw_crm_reservations_hist_imp20260414` (`cluster_id`);
 
@@ -653,4 +747,13 @@ group by source
 
 select distinct market_segment  
 
-from mig_raw_crm_reservations_clean
+select * from mig_raw_crm_reservations_clean
+
+
+select  3381578 + 897824
+
+select length(city), r.* from mig_raw_crm_reservations_21 r
+order by 1 desc
+
+
+select * fro

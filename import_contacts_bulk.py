@@ -166,7 +166,7 @@ def main():
     # 1. Daten aus MySQL laden
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
-    accounts = db.fetch_all("select * from mig_crm_person_accounts_imp20260420")
+    accounts = db.fetch_all(" select * from mig_crm_gms_accounts_imp20260430_invest")
     print(f"  → {len(accounts)} Accounts geladen")
 
     # 2. Mapping

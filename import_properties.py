@@ -44,9 +44,9 @@ def property_payload() -> None:
             'payload': { 
                         #'Name': row.get('name_short'),
                         #'LongName__c': row.get('name_long'),
-                        #'ApaleoID__c': row.get('apaleo_id'),
-                        #'ProtelID__c': row.get('protel_id'),
-                        #'PMS__c': row.get('pms'),
+                        'ApaleoID__c': row.get('apaleo_id'),
+                        'ProtelID__c': row.get('protel_id'),
+                        'PMS__c': row.get('pms'),
                         "JotformID__c":  row.get('jotform_id')
                         }
         }

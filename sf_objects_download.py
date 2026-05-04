@@ -10,12 +10,13 @@ SF_DATE_FIELDS = {
         'LastViewedDate', 'LastReferencedDate', 'SystemModstamp',
         'EmailBouncedDate', 'ConvertedDate', 'CaptureDate',
         'EffectiveFrom', 'EffectiveTo', 'ActivityDate',
-        'CloseDate', 'StartDate', 'EndDate', 'Birthdate'
+        'CloseDate', 'StartDate', 'EndDate', 'Birthdate', 'PersonBirthdate'
     }
 
 # ACCOUNT 
 ACCOUNT_QUERY = """
-            SELECT Id, PersonContactId, PersonEmail, FirstName, LastName, ClusterID__pc
+            SELECT Id, PersonContactId, PersonEmail, FirstName, LastName, ClusterID__pc, PersonBirthdate, PersonEmailBouncedReason, 
+            PersonGenderIdentity, Salutation, BillingCountryCode__c, BillingPostalCode, IsPersonAccount, PersonIndividualId, InvestCustomer__pc, CreatedDate, LastModifiedDate
             FROM Account
         """
 
@@ -26,14 +27,30 @@ ACCOUNT_TABLE = 'crm_person_account_sfid_prod'
 # LEAD
 
 LEAD_QUERY = """
-            SELECT id, FirstName, LastName, Title, Email, BillingEmail__c, HotelCustomer__c, MatchedContact__c, ClusterID__c
-            FROM Lead
-            WHERE IsDeleted = false
+                SELECT id, FirstName, LastName, Title, Email, Country, CountryCode__c, BillingEmail__c, HotelCustomer__c,  
+                        ClusterID__c, Status, PreferredLanguage__c, BirthdateString__c, CreatedDate, MatchBestConfidence__c, MatchCandidateCount__c, MatchCheckDue__c, MatchCheckNotBefore__c, 
+                        MatchCheckRequested__c, MatchCheckStatus__c, MatchResult__c, MatchCheckedBy__c, RelatedPersonAccount__c, RelatedContact__c, LastMatchCheckedAt__c, MatchCheckAttempts__c, MatchedContact__c, MatchManualReviewResolvedAt__c, MatchManualReviewStatus__c 
+                FROM Lead
+                WHERE IsDeleted = false
             """
 
 LEAD_PATH = 'local_data/sf_object_data/leads_prod.parquet'
 
 LEAD_TABLE = 'crm_person_lead_sfid_prod'
+
+
+# Loyality 
+LOYALITY_QUERY = """
+                SELECT Id, MembershipNumber, ExternalMemberId__c, MemberStatus, ContactId, 
+                    ProgramId,  LegacyMemberId__c, LegacyTier__c, TierName__c, LastActivityDate,
+                    EntraID__c, CreatedDate    
+                FROM LoyaltyProgramMember
+                WHERE IsDeleted = false
+                """
+
+LOYALITY_PATH = 'local_data/sf_object_data/loyality_prod.parquet'
+
+LOYALITY_TABLE = 'crm_loyality_sfid_prod'
 
 
 # PROPERTY 
@@ -162,35 +179,53 @@ def create_consent_df() -> pd.DataFrame:
 
 if __name__ == "__main__":
 
-    # Account 
-    df_acc = sf_query(ACCOUNT_QUERY)
-    df_acc.to_parquet(ACCOUNT_PATH, index=False)
-    save_object_in_mysqL(ACCOUNT_PATH,ACCOUNT_TABLE)
+    # # # # # Account 
+    # df_acc = sf_query(ACCOUNT_QUERY)
+    # df_acc.to_parquet(ACCOUNT_PATH, index=False)
+    # save_object_in_mysqL(ACCOUNT_PATH,ACCOUNT_TABLE)
 
-    # # Lead
-    # df_acc = sf_query(LEAD_QUERY)
-    # df_acc.to_parquet(LEAD_PATH, index=False)
-    # #save_object_in_mysqL(LEAD_PATH,LEAD_TABLE)
+    # print('Account done')
 
-    # Reservation
-    #df_acc = sf_query(RESERVATION_QUERY)
-    #df_acc.to_parquet(RESERVATION_PATH, index=False)
-    #save_object_in_mysqL(RESERVATION_PATH, RESERVATION_TABLE)
+    # # # # Loyality
+    # df_loy = sf_query(LOYALITY_QUERY)
+    # df_loy.to_parquet(LOYALITY_PATH, index=False)
+    # save_object_in_mysqL(LOYALITY_PATH,LOYALITY_TABLE)
 
-    # CPE  
-    df_acc = sf_query(CP_EMAIL_QUERY)
-    df_acc.to_parquet(CP_EMAIL_PATH, index=False)
-    save_object_in_mysqL(CP_EMAIL_PATH,CP_EMAIL_TABLE)
+    # print('Loyality done')
 
+    # # # # Lead
+    # df_lea = sf_query(LEAD_QUERY)
+    # df_lea.to_parquet(LEAD_PATH, index=False)
+    # save_object_in_mysqL(LEAD_PATH,LEAD_TABLE)
+
+    # print('Lead done')
+
+    # # # # Reservation
+    df_res = sf_query(RESERVATION_QUERY)
+    df_res.to_parquet(RESERVATION_PATH, index=False)
+    save_object_in_mysqL(RESERVATION_PATH, RESERVATION_TABLE)
+
+    print('Reservation done')
+
+    # # # # # CPE  
+    # df_cpe = sf_query(CP_EMAIL_QUERY)
+    # df_cpe.to_parquet(CP_EMAIL_PATH, index=False)
+    # save_object_in_mysqL(CP_EMAIL_PATH,CP_EMAIL_TABLE)
+
+    # print('CPE done')
  
-    # # CPC  
-    df_acc = sf_query(CP_CONSENT_QUERY)
-    df_acc.to_parquet(CP_CONSENT_PATH, index=False)
-    save_object_in_mysqL(CP_CONSENT_PATH,CP_CONSENT_TABLE)
+    # # # # # CPC  
+    # df_cpc = sf_query(CP_CONSENT_QUERY)
+    # df_cpc.to_parquet(CP_CONSENT_PATH, index=False)
+    # save_object_in_mysqL(CP_CONSENT_PATH,CP_CONSENT_TABLE)
 
-    # Consent 
-    df_consent = create_consent_df()
-    df_consent.to_parquet('local_data/sf_object_data/consent_prod.parquet', index=False)
-    save_object_in_mysqL('local_data/sf_object_data/consent_prod.parquet','crm_consent_sfid_prod')
+    # print('CPC done')
 
-    # print(df_consent.dtypes)
+    # # # # # # Consent 
+    # df_consent = create_consent_df()
+    # df_consent.to_parquet('local_data/sf_object_data/consent_prod.parquet', index=False)
+    # save_object_in_mysqL('local_data/sf_object_data/consent_prod.parquet','crm_consent_sfid_prod')
+
+    # print('Consent done')
+
+    # # # print(df_consent.dtypes)

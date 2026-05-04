@@ -24,7 +24,7 @@ logging.basicConfig(
 # --- Constants ---
 EXTERNAL_ID_FIELD = "ExternalMemberId__c"   # External ID Feld auf Account (Person Account)
 OBJECT_NAME = "LoyaltyProgramMember"
-BATCH_SIZE = 5000
+BATCH_SIZE = 500
 POLL_INTERVAL_SEC = 10
 MAX_POLL_ATTEMPTS = 60
 
@@ -51,18 +51,22 @@ def row_to_sf_record(row: dict) -> dict:
     record = {
         EXTERNAL_ID_FIELD:                  row.get('member_number_new'),
 
+        # Entra ID
+        #"EntraID__c":                       row.get("sf_entra_id"),
+
         # --- Source info ---
         "SourceSystem__c":                  row.get('source'),
 
         # --- Member defaults ---
         "ProgramId":                        "0lpTe000000004rIAA",
-        #"MemberType":                       "Individual",
+        "MemberType":                       "Individual",
         "MemberStatus":                     "Active",
 
         # --- Member Account fields ---
         "ContactId":                        row.get('sf_contact_id'),
-        "MembershipNumber":                 row.get('member_number_new'),
+        #"MembershipNumber":                 row.get('member_number_new'),
         "LegacyMemberId__c":                row.get('legacy_member_number'),
+        "LegacyTier__c":                     row.get('member_tier'),   
         "EnrollmentDate":                   sf_datetime(row.get('enrollment_date')),
     }
 
@@ -138,20 +142,27 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
-    accounts = db.fetch_all("""  select  
-                                        cluster_id,
-                                        sf_contact_id,
-                                        source,
-                                        member_id as legacy_member_number,
-                                        member_tier,
-                                        member_number_new,
-                                        enrollment_date
-                                        
-                                from mig_crm_person_accounts_imp20260414 
-                                where member_tier is not null 
-                                and sf_contact_id is not null  """)
+    accounts = db.fetch_all("""   select distinct gap.member_number_new, 
+                                                gap.member_tier,
+                                                'gms' as source,
+                                                sf_contact_id,
+                                                enrollment_date,
+                                                member_id as legacy_member_number,
+                                                member_tier 
+                                -- select count(*)
+                                -- select *
+                                FROM
+                                    gms_all_profiles gap
+                                    
+                                WHERE gap.missing_name = 0 
+                                -- and gap.exclude_email = 0
+                                -- and gap.member_tier is not null
+                                -- and gap.sf_contact_id is not null
+                                and gap.sf_contact_id is not null
+                                and gap.sf_member_id is null
+                                and gap.is_investor = 1;""")
     
-    print(f"  → {len(accounts)} Accounts geladen")
+    print(f"  → {len(accounts)} Loyality geladen")
 
     # 2. Mapping
     records = [row_to_sf_record(row) for row in accounts]

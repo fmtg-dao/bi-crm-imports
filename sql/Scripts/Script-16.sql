@@ -1,16 +1,16 @@
-DROP PROCEDURE IF EXISTS  sp_mig_raw_crm_reservations_apaleo_iw;
-
-CALL sp_mig_raw_crm_reservations_apaleo_iw()
 
 
-CREATE PROCEDURE sp_mig_raw_crm_reservations_apaleo_iw()
+ call sp_mig_raw_crm_reservations_apaleo_21()
+
+
+CREATE DEFINER=`python`@`%` PROCEDURE `FMT_Reporting`.`sp_mig_raw_crm_reservations_apaleo_21`()
 BEGIN
 
     /* ------------------------------------------------------------------ */
     /* STEP 1: Create table if not exists                                  */
     /* ------------------------------------------------------------------ */
 
-    CREATE TABLE IF NOT EXISTS mig_raw_crm_reservations_iw (
+    CREATE TABLE IF NOT EXISTS mig_raw_crm_reservations_21 (
         row_id                      INT UNSIGNED,
         cluster_id                  INT UNSIGNED,
         _entity_id                  INT UNSIGNED,
@@ -78,7 +78,7 @@ BEGIN
     /* STEP 2: Delete existing apaleo records                              */
     /* ------------------------------------------------------------------ */
 
-    DELETE FROM mig_raw_crm_reservations_iw
+    DELETE FROM mig_raw_crm_reservations_21
     WHERE  source = 'apaleo' and _ptable = 'reservation';
 
 
@@ -86,7 +86,7 @@ BEGIN
     /* STEP 3: Insert reservations                                         */
     /* ------------------------------------------------------------------ */
 
-    INSERT INTO mig_raw_crm_reservations_iw (
+    INSERT INTO mig_raw_crm_reservations_21 (
         row_id, cluster_id, _entity_id, _excluded, _ptable,
         reservation_id, source,
         property_id, property_fmtg_id, property_protel_id,
@@ -179,8 +179,7 @@ BEGIN
       AND   res.property__id        IN (
                 'FBL','FCA','FCR','FEW','FFK','FSA',
                 'FSG','FST','FSV','FCZ','FMO','FHS','FCG'
-            )
-      AND res.rate_plan__code not in ('APPET', 'APP');
+            );
 
 
     /* ------------------------------------------------------------------ */
@@ -244,7 +243,7 @@ BEGIN
     GROUP BY
         fol.reservation__id;
 
-    UPDATE  mig_raw_crm_reservations_iw    r
+    UPDATE  mig_raw_crm_reservations_21    r
     INNER JOIN tmp_revenues             rev ON rev.reservation_id = r.reservation_id
     SET     r.revenue_room  = rev.revenue_room,
             r.revenue_fnb   = rev.revenue_fnb,
@@ -259,7 +258,7 @@ BEGIN
     /* STEP 5: Update property attributes                                  */
     /* ------------------------------------------------------------------ */
 
-    UPDATE  mig_raw_crm_reservations_iw    r
+    UPDATE  mig_raw_crm_reservations_21    r
     INNER JOIN V2D_Property_Attributes  p ON  p.PAS_code3 = r.property_id
     SET     r.property_fmtg_id = p.PAS_FMTG_ID
     WHERE   r.source    = 'apaleo'
@@ -270,14 +269,10 @@ BEGIN
     /* STEP 6: Fix reservation status typo Canceled → Cancelled            */
     /* ------------------------------------------------------------------ */
 
-    UPDATE  mig_raw_crm_reservations_iw
+    UPDATE  mig_raw_crm_reservations_21
     SET     reservation_status = 'Cancelled'
     WHERE   reservation_status = 'Canceled'
       AND   source             = 'apaleo';
     
     SELECT 'OK' AS status;
-END
-
-
-
-
+END;

@@ -1,347 +1,5 @@
 
 
-/***** Create cleaning fields ****/ 
-
-ALTER TABLE gms_all_profiles
-ADD COLUMN domain VARCHAR(255);
-
-ALTER TABLE gms_all_profiles
-ADD COLUMN exclude_email TINYINT(1) DEFAULT 0;
-
-ALTER TABLE gms_all_profiles
-ADD COLUMN missing_name TINYINT(1) DEFAULT 0;
-
-ALTER TABLE `gms_all_profiles`
-ADD COLUMN `cluster_id` VARCHAR(100) NULL DEFAULT NULL;
-
-
-ALTER TABLE `gms_all_profiles`
-ADD COLUMN `gender` VARCHAR(50) NULL DEFAULT NULL;
-
-CREATE INDEX `idx_cluster_id` ON `gms_all_profiles` (`cluster_id`);
-
-
-ALTER TABLE `gms_loyalty_liability`
-ADD COLUMN `cluster_id` VARCHAR(100) NULL DEFAULT NULL;
-
-CREATE INDEX `idx_cluster_id` ON `gms_loyalty_liability` (`cluster_id`);
-
-update gms_all_profiles
-SET domain = SUBSTRING_INDEX(email, '@', -1);
-
-
-CREATE INDEX `idx_list_id` ON `gms_loyalty_liability` (`list_id`(255));
-CREATE INDEX `idx_list_id` ON `gms_all_profiles` (`list_id`(255));
-
-/* exclude record without email */
-
-update gms_all_profiles
-SET exclude_email = 1
-where email is null;2
-
-
-/* lower email */
-
-update gms_all_profiles
-set email = lower(email)
-
-
-/* exclude record temp emails */
-
-
-update gms_all_profiles
-SET exclude_email = 1
-where domain in ('GUEST.BOOKING.COM', 'm.expediapartnercentral.com')
-
-
-
-/* exclude record with bounces */
-
-select distinct current_opt_in from gms_all_profiles gap and
-
-
-select count(*) from gms_all_profiles where exclude_email = 0 and bounce <> 'No'  and bounce_flag > 1
-
-
-update gms_all_profiles
-SET exclude_email = 1
-where bounce_flag > 1
-
-
-/* missing name		 */
-
-SELECT *
-FROM gms_all_profiles
-WHERE (fname IS NULL OR TRIM(fname) = '')
-  AND (lname IS NULL OR TRIM(lname) = '');
-
-
-update gms_all_profiles
-set missing_name = 1
-WHERE (fname IS NULL OR TRIM(fname) = '')
-  AND (lname IS NULL OR TRIM(lname) = '');
-
-update gms_all_profiles
-set missing_name = 1
-WHERE (lname IS NULL OR TRIM(lname)='')
-
-SELECT fname, lname, email FROM gms_all_profiles
-WHERE  LENGTH(TRIM(lname)) = 1
-LIMIT 100;
-
-update gms_all_profiles
-set missing_name = 1
-WHERE  LENGTH(TRIM(lname)) = 1
-
-SELECT fname, lname, email FROM gms_all_profiles
-WHERE  lower(lname) like '%travel%'
-and exclude_email = 0
-and fname is null
-LIMIT 100;
-
-update gms_all_profiles
-set exclude_email = 1
-WHERE  lower(lname) like '%travel%'
-and exclude_email = 0
-and fname is null
- 
-
-update gms_all_profiles
-SET exclude_email = 1
-WHERE  lower(fname) like '%test%'
-and exclude_email = 0
-
-update gms_all_profiles
-SET exclude_email = 1
-WHERE  lower(fname) like '%booking%'
-and exclude_email = 0
-
-update gms_all_profiles
-SET exclude_email = 1
-WHERE  lower(fname) like '%_temporär%'
-and exclude_email = 0
-
-update gms_all_profiles
-SET missing_name = 1
-WHERE  lower(fname) like '%_temporär%'
-and exclude_email = 0
-
-
-update gms_all_profiles
-SET exclude_email = 1
-WHERE  lower(lname) like '%fmtg%'
-and exclude_email = 0
-
-select lname, count(*) 
-from gms_all_profiles
-where exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-group by lname 
-order by 1 desc
-
-
-SELECT list_id, email, fname, lname
-FROM gms_all_profiles
-WHERE lname REGEXP
-   '[^\x00\x7F]|'                -- any non-ASCII character
-  '[\\p{Han}]|'                  -- CJK (Chinese/Japanese/Korean)
-  '[\\p{Hangul}]|'               -- Korean
-  '[\\p{Arabic}]|'               -- Arabic, Persian
-  '[\\p{Hebrew}]|'               -- Hebrew
-  '[\\p{Cyrillic}]|'             -- Russian, Ukrainian, Bulgarian etc.
-  '[\\p{Armenian}]|'             -- Armenian (Գույումճեան)
-  '[\\p{Myanmar}]'               -- Burmese (နေ)
-and exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-ORDER BY lname;
-
-SELECT *
-FROM gms_all_profiles
-WHERE exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-and fname is null
-and lower(lname) like '%gmbh%'
-
-
-update gms_all_profiles
-set missing_name = 1
-WHERE 1=1 --
--- and exclude_email = 0
-and missing_name = 0
--- and current_opt_in = 'Yes'
-and fname is null
-and lower(lname) like '%gmbh%'
-
-
-
-SELECT *
-FROM gms_all_profiles
-WHERE exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-AND email REGEXP'^(spam|noreply|no-reply|donotreply|do-not-reply)@'
-
--- '^(contact|admin|support|sales|service|post|team|hello|hallo|help|noreply|no-reply|donotreply|do-not-reply|news|newsletter|billing|accounting|hr|jobs|career|careers|press|media|legal|privacy|security|abuse|spam|webmaster|hostmaster|postmaster|marketing|reception|general|enquiries|enquiry|inquiry|shop|store|order|orders|booking|bookings|reservations|events|conference|training|education|welcome|member|members|office1|office2|info1|info2)@'
-
--- spam|noreply|no-reply|donotreply|do-not-reply|
-
-update gms_all_profiles
-set exclude_email = 1
-WHERE exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-AND email REGEXP'^(spam|noreply|no-reply|donotreply|do-not-reply)@'
-
-SELECT email, COUNT(*) as cnt
-FROM gms_all_profiles
-WHERE exclude_email = 0
-  AND email REGEXP '^(info|office|contact|admin|support|sales|service|mail|post|team|hello|hallo|help|noreply|no-reply|donotreply|do-not-reply|news|newsletter|billing|accounting|hr|jobs|career|careers|press|media|legal|privacy|security|abuse|spam|webmaster|hostmaster|postmaster|marketing|reception|general|enquiries|enquiry|inquiry|shop|store|order|orders|booking|bookings|reservations|events|conference|training|education|welcome|member|members|office1|office2|info1|info2)@'
-GROUP BY email
-ORDER BY cnt DESC;
-
-
-UPDATE gms_all_profiles
-SET exclude_email = 1
-WHERE email IN (
-  'aina+test@xo7.fr',
-  'spieletest@gmail.com',
-  'test@abv.bg',
-  'test@tesd.cz',
-  'helene+test@xo7.fr',
-  'test@hotmail.com',
-  'constantin-graf-test@constantingraf.at',
-  'test@test.cm',
-  'test@gmx.at',
-  'test@sdfsdf.com',
-  'test@sey.cry',
-  'accounting@falktravel.de'
-);
-
-SELECT *
-FROM gms_all_profiles
-WHERE exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-and lname LIKE '%\_%'
-
-UPDATE gms_all_profiles
-set missing_name = 1
-WHERE exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-and lname LIKE '%\_%'
-
-UPDATE gms_all_profiles
-set missing_name = 1
-where lname like '%???%'
-and missing_name = 0
-
-UPDATE gms_all_profiles
-set missing_name = 1
-where lname in ('----',  '­')
-and missing_name = 0 
-
-UPDATE gms_all_profiles
-SET lname = CONVERT(BINARY CONVERT(lname USING latin1) USING utf8mb4)
-WHERE lname REGEXP '[├│┬┐┘╜╗╛»«]'
-and email = 'amaea@email.cz'
-
-select * from gms_all_profiles where email = 'amaea@email.cz'
-
-update gms_all_profiles gap 
-set missing_name = 1 
-where fname like 'Компенсация-Http%'
-
-update gms_all_profiles gap 
-set missing_name = 1 
-where lname = '_temporaryProfile'
-
-
-
-UPDATE gms_all_profiles
-SET missing_name = 1
-WHERE fname LIKE '%@@%'
-   OR lname LIKE '%@@%';
-
-
-UPDATE gms_all_profiles
-SET missing_name = 1
-WHERE fname LIKE '%Http://%'
-   OR lname LIKE '%Http://%';
-
-update gms_all_profiles
-set exclude_email = 1
-WHERE lname REGEXP
-  -- '[^\x00-\x7F]|'                -- any non-ASCII character
-  '[\\p{Han}]|'                  -- CJK (Chinese/Japanese/Korean)
-  '[\\p{Hangul}]|'               -- Korean
-  '[\\p{Arabic}]|'               -- Arabic, Persian
-  '[\\p{Hebrew}]|'               -- Hebrew
-  '[\\p{Cyrillic}]|'             -- Russian, Ukrainian, Bulgarian etc.
-  '[\\p{Armenian}]|'             -- Armenian (Գույումճեան)
-  '[\\p{Myanmar}]'               -- Burmese (နေ)
-ORDER BY lname;
-
-
-
-SELECT email, fname, lname
-FROM gms_all_profiles
-WHERE lname REGEXP '^[A-Za-zÀ-ÖØ-öø-ÿ]\\.$'
-and exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes';
-
-
-update gms_all_profiles
-set missing_name = 0
-WHERE lname REGEXP '^[A-Za-zÀ-ÖØ-öø-ÿ]\\.$'
-and exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes';
-
-select lname, count(*)
-from gms_all_profiles
-where exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-group by lname having count(*) > 1
-order by 2 asc
-
-
-
-/* clean codes check */
-
-select distinct country
-from gms_all_profiles
-
-select distinct citizenship
-from gms_all_profiles
-
-select distinct language_code
-from gms_all_profiles
-
-
-select * 
-from gms_all_profiles
-where exclude_email = 0
-and missing_name = 0
-and current_opt_in = 'Yes'
-and city is not null 
-and country is null
-
-
-
-/* exclude hard opt outs */
-
-
-select distinct tag_list from gms_tags where tag_list like '%FMTG_2_optout%'
-
-240319_FMTG_2_optout, 240320_FMTG_2_optout
-
-
 
 
 /***************************************/
@@ -350,6 +8,8 @@ select distinct tag_list from gms_tags where tag_list like '%FMTG_2_optout%'
 
 
 select * from mig_crm_person_accounts 
+
+select * from mig_crm_person_accounts_imp20260414
 
 /***    create an identity table     **************/
 
@@ -386,6 +46,9 @@ SELECT
     *
 FROM ranked
 WHERE rn = 1;
+
+
+select * from mig_crm_person_accounts
 
 
 ALTER TABLE `mig_crm_person_accounts_imp20260414`
@@ -561,6 +224,11 @@ and gll.inactive_flag = 0
 and gll.points > 0 
 group by gll.list_id
 ) s
+
+
+
+
+
  
  /*******************************************/
  /****     SF IDs            ***************/
@@ -721,6 +389,32 @@ SET
   and sf_contact_id is not null 
   -- and member_number_new = 358000362
 
+  
+/*** invest post import ***/
+  
+  select distinct 
+		gap.member_number_new, 
+        gap.member_tier,
+        'gms' as source,
+        sf_contact_id,
+        enrollment_date,
+        member_id as legacy_member_number,
+        member_tier 
+    -- select count(*)
+    -- select *
+    FROM
+        gms_all_profiles gap
+        
+    WHERE gap.missing_name = 0 
+    -- and gap.exclude_email = 0
+    -- and gap.member_tier is not null
+    -- and gap.sf_contact_id is not null
+    and gap.sf_contact_id is not null
+    and gap.sf_member_id is null
+    and gap.is_investor = 1;
+  
+  
+  
  
 /***************************************/
 /***    Other stuff      **************/
@@ -957,6 +651,13 @@ select * from int_crm_person_accounts
 /********************************************/
 /* GMS ACCOUNTS */
 
+
+
+
+
+
+
+
 CREATE TABLE mig_crm_gms_accounts AS
 SELECT
 	null as cluster_id,
@@ -988,11 +689,10 @@ SELECT
 FROM
 	gms_all_profiles gap
 	
-WHERE EXISTS (
-    SELECT 1
-    FROM mig_mapping_investor i
-    WHERE gap.email = i.email
-);
+WHERE gap.exclude_email = 0
+and gap.missing_name = 0
+and gap.current_opt_in = 'Yes'
+
 
 
 select * 
@@ -1176,8 +876,178 @@ GROUP BY
   enrollment_date
 
   
+ drop table  mig_crm_person_accounts_imp20260420
+CREATE TABLE mig_crm_person_accounts_imp20260420 AS
+WITH ranked AS (
+    SELECT
+        t.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY t.cluster_id
+            ORDER BY
+                CASE
+                    WHEN t.source = 'gms' THEN 0
+                    WHEN t.source IN ('protel', 'apaleo') THEN 1
+                    ELSE 2
+                END,
+                t.complete_fields DESC,
+                CASE
+                    WHEN t._rule_bin = 1 THEN 0
+                    WHEN t._rule_bin = 0 THEN 1
+                    ELSE 2
+                END,
+                t.source ASC,
+                t.source_id ASC
+        ) AS rn
+    FROM mig_crm_person_accounts t
+    WHERE t.cluster_id IS NOT NULL
+      -- AND t.cluster_id = 1
+      AND EXISTS (select 1 
+			from gms_all_profiles gap
+			left join crm_person_account_sfid_prod acc
+				on gap.cluster_id = acc.ClusterID__pc
+				and acc.ClusterID__pc is not null
+			where gap.cluster_id is not null
+			and  acc.ClusterID__pc is null
+			and t.cluster_id = gap.cluster_id )
+		
+)
+SELECT
+    *
+FROM ranked
+WHERE rn = 1;  
   
-  
-  
-  
+select count(*) from mig_crm_person_accounts_imp20260420
 
+
+ALTER TABLE `mig_crm_person_accounts_imp20260420`
+ADD COLUMN `central_consent` tinyint(1) unsigned NOT NULL DEFAULT 0;
+
+ALTER TABLE `mig_crm_person_accounts_imp20260420`
+ADD COLUMN `is_investor` tinyint(1) unsigned NOT NULL DEFAULT 0;
+
+ALTER TABLE `mig_crm_person_accounts_imp20260420`
+ADD COLUMN `sf_contact_id` VARCHAR(255) NULL DEFAULT NULL;
+
+ALTER TABLE `mig_crm_person_accounts_imp20260420`
+ADD COLUMN `sf_account_id` VARCHAR(255) NULL DEFAULT NULL;
+
+ALTER TABLE `mig_crm_person_accounts_imp20260420`
+ADD COLUMN `member_number_new` VARCHAR(255) NULL DEFAULT NULL;
+
+ALTER TABLE `mig_crm_person_accounts_imp20260420`
+ADD COLUMN `enrollment_date` DATE NULL DEFAULT NULL;
+  
+  
+ CREATE INDEX idx_cluster_id ON mig_crm_person_accounts_imp20260420 (cluster_id);
+CREATE INDEX idx_clean_email ON mig_crm_person_accounts_imp20260420 (clean_email);
+  
+/* update invest information */ 
+UPDATE mig_crm_person_accounts_imp20260420 p
+set p.is_investor = 1
+where exists ( select 1 from mig_mapping_investor_clean i where p.clean_email = i.email ) 
+  
+select count(*) from mig_crm_person_accounts_imp20260420 where is_investor = 1
+
+/* update central_consent */ 
+
+UPDATE mig_crm_person_accounts_imp20260420 p
+set p.central_consent = 1 
+where exists ( select 1 from gms_all_profiles i where p.clean_email = i.email and i.current_opt_in = 'Yes') 
+
+
+/* remove dublicates  */
+
+select  cluster_id, count(*)
+from mig_crm_person_accounts_imp20260420
+group by cluster_id having count(*) > 1
+
+select * from mig_crm_person_accounts_imp20260420 where cluster_id = 1
+
+/* set member_number_new */ 
+
+ UPDATE mig_crm_person_accounts_imp20260420
+ set member_number_new = 358000360 + cluster_id
+
+/* checks existing account by email before import */
+
+select *
+from mig_crm_person_accounts_imp20260420 a
+inner join crm_cp_email_sfid_prod b
+	on a.clean_email  = b.EmailAddress
+where LEFT(b.PartyID__c, 3) = '003'
+
+delete from mig_crm_person_accounts_imp20260420 a
+where exists (select 1 from crm_cp_email_sfid_prod b
+				where a.clean_email  = b.EmailAddress)
+
+
+select count(*) 
+from mig_crm_person_accounts_imp20260420 a
+where exists (select 1 from crm_person_account_sfid_prod b
+				where a.clean_email  = b.PersonEmail)
+				
+				
+select * from mig_crm_person_accounts_imp20260420				
+select * from crm_person_account_sfid_prod 
+
+/* Update sf ids  */
+
+select * 
+from mig_crm_person_accounts_imp20260420 a
+inner join crm_person_account_sfid_prod s
+	on a.cluster_id = s.ClusterID__pc 
+	
+update mig_crm_person_accounts_imp20260420 a
+inner join crm_person_account_sfid_prod s
+	on a.cluster_id = s.ClusterID__pc 
+set a.sf_account_id = s.Id, a.sf_contact_id = s.PersonContactId
+where a.cluster_id = s.ClusterID__pc
+
+/* Analyse failed imports  */
+
+select i.cluster_id,  i.clean_email, i.clean_first_name, i.clean_last_name, gap.email, gap.fname, gap.lname, i.* 
+from mig_crm_person_accounts_imp20260420 i
+inner join gms_all_profiles gap 
+	on i.cluster_id = gap.cluster_id 
+where sf_account_id is null
+
+-- delete not imported records
+DELETE i
+FROM mig_crm_person_accounts_imp20260420 i
+INNER JOIN gms_all_profiles gap
+  ON i.cluster_id = gap.cluster_id
+WHERE i.sf_account_id IS NULL;
+
+/* central consent import */
+select * from crm_consent_sfid_prod
+
+-- check if exists
+select *
+from mig_crm_person_accounts_imp20260420 i
+inner join crm_consent_sfid_prod c
+	on c.PersonContactId = i.sf_contact_id
+where c.Name = 'marketing_central'
+
+select distinct e.Id as cpe_id, 'gms' as 'source'
+from crm_cp_email_sfid_prod e
+inner join mig_crm_person_accounts_imp20260420 i
+	on e.PartyID__c = i.sf_contact_id
+where i.central_consent = 1
+
+
+select *  from crm_cp_consent_sfid_prod
+
+
+select Name, count(*) as number_of_emails
+from crm_cp_consent_sfid_prod
+group by Name 
+
+
+select *
+from gms_all_profiles gap 
+where gap.current_opt_in = 'Yes'
+and gap.exclude_email = 0
+and gap.missing_name = 0
+and gap.lname is not null
+and gap.bounce = 0
+and not exists (  select 1 from crm_cp_email_sfid_prod e  where e.EmailAddress  = gap.email )

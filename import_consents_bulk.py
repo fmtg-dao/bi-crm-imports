@@ -129,18 +129,17 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
-    accounts = db.fetch_all("""  select distinct Id as cpe_id, 'gms' as 'source'
+    accounts = db.fetch_all(""" error | select 'gustaffo' as 'source', cpe.id  as cpe_id
                                     from crm_cp_email_sfid_prod cpe
-                                    inner join gms_all_profiles gap 
-                                        on gap.email = cpe.EmailAddress
-                                    where gap.current_opt_in = 'Yes'
-                                    and not exists (select 1 from crm_consent_sfid_prod c 
-                                                        where Name = 'marketing_central' 
-                                                        and cpe.EmailAddress = c.EmailAddress)  
-                                
+                                    inner join  gustaffo_newsletter_contacts gus 
+                                        on gus.email = cpe.EmailAddress
+                                    where not EXISTS ( 
+                                                select 1 from crm_cp_consent_sfid_prod con where con.ContactPointId  = cpe.Id and con.Name = 'marketing_central'
+                                    ) 
+                                    and left(cpe.PartyID__c,3) = '003' 
                             """)
     
-    print(f"  → {len(accounts)} Accounts geladen")
+    print(f"  → {len(accounts)} Consents geladen")
 
     # 2. Mapping
     records = [row_to_sf_record(row) for row in accounts]
