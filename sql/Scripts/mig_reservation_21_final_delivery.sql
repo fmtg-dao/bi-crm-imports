@@ -25,6 +25,13 @@ ADD COLUMN is_changed TINYINT(1) NOT NULL DEFAULT 0
 ADD INDEX idx_last_updated_at (last_updated_at),
 ADD INDEX idx_is_changed (is_changed);
 
+
+ALTER TABLE mig_raw_crm_reservations_clean
+ADD COLUMN exclude_reason VARCHAR(100) DEFAULT NULL
+    COMMENT 'Grund für den Ausschluss vom SF-Import (NULL = nicht ausgeschlossen)'
+    AFTER _excluded,
+ADD INDEX idx_exclude_reason (exclude_reason);
+
 /** add column for invalid emails **/
 ALTER TABLE mig_raw_crm_reservations_clean
 ADD COLUMN email_invalid_reason VARCHAR(50) DEFAULT NULL
@@ -471,7 +478,7 @@ WHERE NOT (
 
 /* remove appartment owner  */
 update`mig_raw_crm_reservations_clean` cr
-set _excluded = 1
+set _excluded = 1, exclude_reason = 'apartment owner'
 where cr.rate_plan_code in ('OWN', 'APP', 'APPET', 'APP')
 and _excluded = 0
 
@@ -488,9 +495,14 @@ set _excluded = 1
 where reservation_status = 'Optional'
 and _excluded = 0
 
+update mig_raw_crm_reservations_clean
+set _excluded = 1, exclude_reason = 'optional status' 
+where reservation_status = 'Optional'
+and sf_reservation_id is  null
+
 -- optional status excluded - fix existing res
 update mig_raw_crm_reservations_clean
-set _excluded = 0 
+set _excluded = 0, exclude_reason = null 
 where reservation_status = 'Optional'
 and _excluded = 1 and sf_reservation_id is not null
 
@@ -518,7 +530,7 @@ where sf_property_id is null;
 
 -- remove reservation without property id 
 update mig_raw_crm_reservations_clean c
-set _excluded = 1
+set _excluded = 1, exclude_reason = 'inactive property'
 where sf_property_id is null
 and c.sf_reservation_id is not null
 
@@ -540,10 +552,17 @@ JOIN V2D_Property_Attributes a
      OR (a.PAS_apaleo_switch_to IS NULL
          AND DATE(res.arrival_at) >= DATE(a.PAS_apaleo_switch_from))
      )
-SET res._excluded = 1
+SET res._excluded = 1, res.exclude_reason = 'overlapped'
 WHERE res.source = 'protel'
   AND res._excluded = 0;
 
+
+-- remove new cancelled reservation with reason
+update mig_raw_crm_reservations_clean res
+set _excluded = 1, exclude_reason = 'cancelled'
+where reservation_status in ('Cancelled', 'NoShow') 
+and res.sf_reservation_id is null 
+and res.exclude_reason is null
 
 -- remove new cancelled reservation 
 update mig_raw_crm_reservations_clean res
@@ -660,6 +679,7 @@ select *
 from mig_raw_crm_reservations_clean r
 where r.reservation_status = 'Confirmed' 
 and r.sf_reservation_id is null
+and r.sf_property_id is not null
 and r._ptable = 'reservation'
 -- and exists( select 1 from V2D_Property_Attributes p where p.pas_code3 = r.property_id and pas_pms = 'protel' and p.is_active = 1)
 and r.departure_at >= '2026-05-03' 
@@ -673,3 +693,39 @@ select * from V2D_Property_Attributes p where p.pas_code3 = r.property_id and pa
 select * 
 from crm_reservation_sfid_prod
 where ReservationStatus__c = 'Confirmed' 
+
+
+/*** ADD EXCLUDE REASONS  ***/
+
+SELECT 
+    exclude_reason, 
+    COUNT(*) AS row_count
+FROM mig_raw_crm_reservations_clean
+WHERE _excluded = 1
+GROUP BY exclude_reason
+ORDER BY row_count DESC;
+
+
+UPDATE mig_raw_crm_reservations_clean
+SET _excluded      = 1,
+    exclude_reason = 'inactive property'
+WHERE sf_property_id IS NULL
+ and exclude_reason is null;
+
+
+select count(*) 
+from mig_raw_crm_reservations_clean
+where exclude_reason is null
+ and _excluded = 1
+and last_name = 'Deleted'
+
+select *
+from mig_raw_crm_reservations_clean
+where exclude_reason = 'overlapped'
+ and _excluded = 1
+ and _ptable = 'history'
+
+
+select *
+from mig_raw_crm_reservations_clean
+where source = 'protel' and _ptable not in ('history', 'cancelled')

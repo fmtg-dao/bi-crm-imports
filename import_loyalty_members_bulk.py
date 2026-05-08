@@ -52,22 +52,22 @@ def row_to_sf_record(row: dict) -> dict:
         EXTERNAL_ID_FIELD:                  row.get('member_number_new'),
 
         # Entra ID
-        #"EntraID__c":                       row.get("sf_entra_id"),
+        "EntraID__c":                       row.get("sf_entra_id"),
 
         # --- Source info ---
-        "SourceSystem__c":                  row.get('source'),
+        #"SourceSystem__c":                  row.get('source'),
 
         # --- Member defaults ---
-        "ProgramId":                        "0lpTe000000004rIAA",
-        "MemberType":                       "Individual",
-        "MemberStatus":                     "Active",
+        #"ProgramId":                        "0lpTe000000004rIAA",
+        #"MemberType":                       "Individual",
+        #"MemberStatus":                     "Active",
 
         # --- Member Account fields ---
-        "ContactId":                        row.get('sf_contact_id'),
+        #"ContactId":                        row.get('sf_contact_id'),
         #"MembershipNumber":                 row.get('member_number_new'),
-        "LegacyMemberId__c":                row.get('legacy_member_number'),
-        "LegacyTier__c":                     row.get('member_tier'),   
-        "EnrollmentDate":                   sf_datetime(row.get('enrollment_date')),
+        #"LegacyMemberId__c":                row.get('legacy_member_number'),
+        #"LegacyTier__c":                     row.get('member_tier'),   
+        #"EnrollmentDate":                   sf_datetime(row.get('enrollment_date')),
     }
 
     # None-Werte entfernen
@@ -142,25 +142,13 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
-    accounts = db.fetch_all("""   select distinct gap.member_number_new, 
-                                                gap.member_tier,
-                                                'gms' as source,
-                                                sf_contact_id,
-                                                enrollment_date,
-                                                member_id as legacy_member_number,
-                                                member_tier 
-                                -- select count(*)
-                                -- select *
-                                FROM
-                                    gms_all_profiles gap
-                                    
-                                WHERE gap.missing_name = 0 
-                                -- and gap.exclude_email = 0
-                                -- and gap.member_tier is not null
-                                -- and gap.sf_contact_id is not null
-                                and gap.sf_contact_id is not null
-                                and gap.sf_member_id is null
-                                and gap.is_investor = 1;""")
+    accounts = db.fetch_all("""   select sfl.ExternalMemberId__c as member_number_new, etr.object_id  as sf_entra_id 
+                                    from crm_loyality_sfid_prod sfl
+                                    inner join crm_person_account_sfid_prod sfc
+                                        on sfl.ContactId = sfc.PersonContactId
+                                    inner join mig_loyality_entra_id_4 etr
+                                        on etr.email = sfc.PersonEmail  
+                                    where sfl.EntraID__c is null""")
     
     print(f"  → {len(accounts)} Loyality geladen")
 

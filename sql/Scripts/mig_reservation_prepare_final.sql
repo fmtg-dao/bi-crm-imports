@@ -92,13 +92,20 @@ ADD COLUMN `data_quality_bucket` varchar(32)
     CHARACTER SET utf8mb3 COLLATE utf8mb3_unicode_ci DEFAULT NULL,
 ADD KEY `idx_data_quality_bucket` (`data_quality_bucket`);
 
+-- reset bucket
+
+UPDATE mig_raw_crm_reservations_clean
+SET data_quality_bucket = NULL
+WHERE data_quality_bucket IS NOT NULL;
+
+
 -- fill buckets 
 UPDATE `mig_raw_crm_reservations_clean`
 SET `data_quality_bucket` = CASE
-    -- No personal data at all
+    -- No personal data at all (inkl. last_name = 'Deleted' o.ä.)
     WHEN COALESCE(first_name, '') = ''
      AND COALESCE(middle_name, '') = ''
-     AND COALESCE(last_name, '') = ''
+     AND (COALESCE(last_name, '') = '' OR LOWER(TRIM(last_name)) = 'deleted')
      AND COALESCE(email, '') = ''
      AND COALESCE(salutation, '') = ''
      AND COALESCE(gender, '') = ''
@@ -110,16 +117,15 @@ SET `data_quality_bucket` = CASE
      AND COALESCE(country, '') = ''
      AND COALESCE(nationality, '') = ''
         THEN '1_no_personal_data'
-
-    -- Minimum viable: last_name AND email
+    -- Minimum viable: last_name AND email (Marker zählen nicht als last_name)
     WHEN COALESCE(last_name, '') <> ''
+     AND LOWER(TRIM(last_name)) <> 'deleted'
      AND COALESCE(email, '') <> ''
         THEN '2_has_lastname_and_email'
-
-    -- Has some data, but missing the minimum (last_name + email)
+    -- Has some data, but missing the minimum
     ELSE '3_partial_data'
 END
-WHERE  `data_quality_bucket` is not null -- and `_excluded` = 0;
+WHERE `data_quality_bucket` IS NOT NULL;
 
 
 

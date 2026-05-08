@@ -756,4 +756,5 @@ select length(city), r.* from mig_raw_crm_reservations_21 r
 order by 1 desc
 
 
-select * fro
+select * from V2D_Property_Attributes vdpa where vdpa.PAS_Protel_ID in (
+select distinct property_protel_id from mig_raw_crm_reservations_clean where sf_property_id is null)
