@@ -32,5 +32,5 @@ if __name__ == "__main__":
     # path = 'local_data/csv/entra_id_80k.csv'
     # save_object_in_mysqL(path, 'mig_loyality_entra_id')
 
-    path = 'local_data/csv/Entra_Import_Program_Members_part_4_results.csv'
-    save_object_in_mysqL(path, 'mig_loyality_entra_id_4')
+    path = 'local_data/csv/owner_data_upload.csv'
+    save_object_in_mysqL(path, 'mig_residence_owner_upload')

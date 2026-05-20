@@ -131,7 +131,8 @@ def account_person_row_to_payload() -> None:
 
                     # --- Flags / integration ---
                     #"IsMasterAccount__c": False,
-                    
+                    "InvestmentStatus__pc": row.get('investor_status'),
+                    "InvestmentExpirationDate__pc": sf_datetime(row.get('investor_expiration_date'))                    
 
                 }
             }

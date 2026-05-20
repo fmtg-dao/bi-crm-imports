@@ -52,7 +52,7 @@ def row_to_sf_record(row: dict) -> dict:
         EXTERNAL_ID_FIELD:                  row.get('member_number_new'),
 
         # Entra ID
-        "EntraID__c":                       row.get("sf_entra_id"),
+        #"EntraID__c":                       row.get("sf_entra_id"),
 
         # --- Source info ---
         #"SourceSystem__c":                  row.get('source'),
@@ -65,8 +65,8 @@ def row_to_sf_record(row: dict) -> dict:
         # --- Member Account fields ---
         #"ContactId":                        row.get('sf_contact_id'),
         #"MembershipNumber":                 row.get('member_number_new'),
-        #"LegacyMemberId__c":                row.get('legacy_member_number'),
-        #"LegacyTier__c":                     row.get('member_tier'),   
+        "LegacyMemberId__c":                 row.get('legacy_member_number'),
+        "LegacyTier__c":                     row.get('member_tier'),   
         #"EnrollmentDate":                   sf_datetime(row.get('enrollment_date')),
     }
 
@@ -142,13 +142,12 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
-    accounts = db.fetch_all("""   select sfl.ExternalMemberId__c as member_number_new, etr.object_id  as sf_entra_id 
-                                    from crm_loyality_sfid_prod sfl
-                                    inner join crm_person_account_sfid_prod sfc
-                                        on sfl.ContactId = sfc.PersonContactId
-                                    inner join mig_loyality_entra_id_4 etr
-                                        on etr.email = sfc.PersonEmail  
-                                    where sfl.EntraID__c is null""")
+    accounts = db.fetch_all("""   select  l.ExternalMemberId__c as member_number_new, 
+                                        u.LegacyMemberId__c as legacy_member_number, 
+                                        u.LegacyTier__c as member_tier
+                                from mig_invest_program_member_update u
+                                inner join crm_loyality_sfid_prod l 
+                                    on u.MembershipID = l.Id""")
     
     print(f"  → {len(accounts)} Loyality geladen")
 

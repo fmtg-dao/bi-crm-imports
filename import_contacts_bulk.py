@@ -55,7 +55,11 @@ def row_to_sf_record(row: dict) -> dict:
 
         # --- Source info ---
         "SourceSystem__c":                  row.get('source'),
-        "InvestCustomer__pc":               bool(row.get('is_investor') or 0),
+        #"InvestCustomer__pc":               bool(row.get('is_investor') or 0),
+
+        # --- Owner info ---
+        "InvestmentStatus__pc": row.get('investor_status'),
+        "InvestmentExpirationDate__pc": sf_datetime(row.get('investor_expiration_date')),   
 
         # --- Contact (Person Account core fields) ---
         "FirstName":                        row.get("clean_first_name"),
@@ -166,7 +170,7 @@ def main():
     # 1. Daten aus MySQL laden
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
-    accounts = db.fetch_all(" select * from mig_crm_gms_accounts_imp20260430_invest")
+    accounts = db.fetch_all(" SELECT * FROM mig_residence_owner_upload_update")
     print(f"  → {len(accounts)} Accounts geladen")
 
     # 2. Mapping

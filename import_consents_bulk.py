@@ -23,7 +23,7 @@ logging.basicConfig(
 
 # --- Constants ---
 OBJECT_NAME = "ContactPointConsent"
-BATCH_SIZE = 5000
+BATCH_SIZE = 500
 POLL_INTERVAL_SEC = 10
 MAX_POLL_ATTEMPTS = 60
 
@@ -48,12 +48,13 @@ def sf_datetime(value: Optional[Union[datetime, date]]) -> Optional[str]:
 def row_to_sf_record(row: dict) -> dict:
     """Mappt eine MySQL-Zeile auf ein Salesforce Consent."""
     record = {
-        "Name": "marketing_central",
+        "Name":  row.get("consent_type"), #"marketing_central",
         "ContactPointId": row.get("cpe_id"),
         "CaptureDate": sf_datetime(date.today()),
-        "CaptureSource": "gms" ,
+        "CaptureSource": row.get("source") ,
         "PrivacyConsentStatus": "OptIn",
-        "DataUsePurposeId": '0ZWTe0000000X7FOAU',
+        "DataUsePurposeId": row.get("data_use_purpose"), #'0ZWTe0000000XATOA2' # residences_central   #'0ZWTe0000000X8rOAE', #property,  #central:'0ZWTe0000000X7FOAU',
+        "Property__c": row.get("sf_property_id"),
         "EffectiveFrom": sf_datetime(date.today()),
         #"EffectiveTo": None,
         "SourceSystem__c": row.get("source"),
@@ -129,15 +130,7 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
-    accounts = db.fetch_all(""" error | select 'gustaffo' as 'source', cpe.id  as cpe_id
-                                    from crm_cp_email_sfid_prod cpe
-                                    inner join  gustaffo_newsletter_contacts gus 
-                                        on gus.email = cpe.EmailAddress
-                                    where not EXISTS ( 
-                                                select 1 from crm_cp_consent_sfid_prod con where con.ContactPointId  = cpe.Id and con.Name = 'marketing_central'
-                                    ) 
-                                    and left(cpe.PartyID__c,3) = '003' 
-                            """)
+    accounts = db.fetch_all(""" error select * from mig_residence_owner_upload_consent_20260520  """)
     
     print(f"  → {len(accounts)} Consents geladen")
 
