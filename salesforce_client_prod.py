@@ -457,6 +457,24 @@ class SalesforceClientCC:
         if r.status_code not in (200, 201):
             raise RuntimeError(f"Bulk create insert job failed ({r.status_code}): {r.text}")
         return r.json()["id"]
+    
+    def bulk_create_update_job(self, object_name: str) -> str:
+            """
+            Erstellt einen Bulk API 2.0 Update-Job.
+            Update erfolgt per Salesforce Id (muss als 'Id' Spalte im CSV vorhanden sein).
+            Gibt die Job-ID zurück.
+            """
+            url = f"{self._base()}/jobs/ingest"
+            body = {
+                "object": object_name,
+                "operation": "update",
+                "contentType": "CSV",
+                "lineEnding": "LF",
+            }
+            r = self._client.post(url, json=body)
+            if r.status_code not in (200, 201):
+                raise RuntimeError(f"Bulk create update job failed ({r.status_code}): {r.text}")
+            return r.json()["id"]
 
     def bulk_upload_csv(self, job_id: str, csv_data: str) -> None:
         """
