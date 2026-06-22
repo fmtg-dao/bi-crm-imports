@@ -123,13 +123,21 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
-    accounts = db.fetch_all(""" select distinct Id as cpc_id
-                            from mig_unsubscriber_cnl_2605_upload usb
-                            inner join crm_consent_sfid_prod con 
-                                on usb.Email = con.EmailAddress 
-                                and con.Name = 'marketing_central'
-                            where con.PrivacyConsentStatus = 'OptIn'
-                                and con.Name = 'marketing_central'
+    accounts = db.fetch_all(""" select id as cpc_id
+                                    from crm_cp_consent_sfid_prod con
+                                    where id in (
+
+                                    '0ZXTe0000002eXnOAI',
+                                    '0ZXTe0000002fi5OAA',
+                                    '0ZXTe0000002gm7OAA',
+                                    '0ZXTe0000002gm9OAA',
+                                    '0ZXTe0000002lPzOAI',
+                                    '0ZXTe0000007FTbOAM',
+                                    '0ZXTe0000007WM2OAM',
+                                    '0ZXTe0000007eRSOAY',
+                                    '0ZXTe000000GQGHOA4',
+                                    '0ZXTe000000IvELOA0'
+                                    )
                             """)
     
     print(f"  → {len(accounts)} Consents geladen")

@@ -38,11 +38,7 @@ def save_object_in_mysqL(local_path:str, table_name:str, if_exists:str='replace'
 
 if __name__ == "__main__":
 
-    # path = 'local_data/csv/resid_numid_mapping.csv'
-    # save_object_in_mysqL(path, 'mig_resid_numid_mapping')
 
-    # path = 'local_data/csv/entra_id_80k.csv'
-    # save_object_in_mysqL(path, 'mig_loyality_entra_id')
 
-    path = 'local_data/csv/20260528_all_investors.csv'
-    save_object_in_mysqL(path, 'stg_imp_invest_20260519', delimiter=";")
+    path = 'local_data/csv/20260528_all_investors_points.csv'
+    save_object_in_mysqL(path, 'stg_imp_invest_all_investors_points', delimiter=";")

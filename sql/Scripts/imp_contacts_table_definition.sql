@@ -222,24 +222,19 @@ BEGIN
     DECLARE v_rows_archived INT DEFAULT 0;
     DECLARE v_rows_deleted  INT DEFAULT 0;
 
-    /* ------------------------------------------------------------------ */
-    /* Safety: batch_id muss gesetzt sein                                  */
-    /* ------------------------------------------------------------------ */
     IF p_batch_id IS NULL OR p_batch_id = '' THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'sp_archive_crm_imp_person_accounts: p_batch_id darf nicht leer sein';
     END IF;
 
-    /* ------------------------------------------------------------------ */
-    /* Transaktional: erst kopieren, dann löschen                          */
-    /* ------------------------------------------------------------------ */
     START TRANSACTION;
 
     /* ---- 1. Snapshot in History übertragen ---- */
     INSERT INTO crm_imp_person_accounts_history (
         row_id, version_at, change_type, change_source,
-        cluster_id, _excluded, _exclude_reason, _operation, _batch_id, _processed_at,
+        cluster_id, _excluded, _exclude_reason, _operation, _batch_id,
         sf_account_id, sf_person_contact_id, sf_loyalty_member_id, sf_cp_email_id,
+        _account_processed_at, _loyalty_processed_at, _points_processed_at, _consent_processed_at,
         source, source_origin,
         external_id, entra_external_id,
         salutation, first_name, middle_name, last_name,
@@ -256,8 +251,9 @@ BEGIN
     )
     SELECT
         row_id, NOW(), 'sf_push', p_change_source,
-        cluster_id, _excluded, _exclude_reason, _operation, _batch_id, _processed_at,
+        cluster_id, _excluded, _exclude_reason, _operation, _batch_id,
         sf_account_id, sf_person_contact_id, sf_loyalty_member_id, sf_cp_email_id,
+        _account_processed_at, _loyalty_processed_at, _points_processed_at, _consent_processed_at,
         source, source_origin,
         external_id, entra_external_id,
         salutation, first_name, middle_name, last_name,
@@ -291,11 +287,9 @@ BEGIN
 
     COMMIT;
 
-    /* ---- 4. Ergebnis zurückgeben ---- */
     SELECT
         p_batch_id          AS batch_id,
         v_rows_archived     AS rows_archived,
         v_rows_deleted      AS rows_deleted,
         NOW()               AS finished_at;
-
 END

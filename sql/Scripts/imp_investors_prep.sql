@@ -62,11 +62,13 @@ INSERT INTO crm_imp_person_accounts (
     investment_expiration_date,
 
     /* Consent */
-    consent_central
+    consent_central,
+    /*point */
+    loyalty_points_balance
 )
 SELECT distinct
-    'update'                                            AS _operation,
-    'conda_2026-05-28_invest_loyalty_upt'                AS _batch_id,
+    'insert'                                            AS _operation,
+    '2026-05-28_invest_points_migration'                AS _batch_id,
 
     acc.Id                                              AS sf_account_id,
     acc.PersonContactId                                 AS sf_person_contact_id,
@@ -100,7 +102,8 @@ SELECT distinct
     '%d.%m.%Y'
 	)          											AS investment_expiration_date,
 
-    1                                                   AS consent_central
+    1                                                   AS consent_central,
+    inv.points											AS loyalty_points_balance
 -- select *
 FROM        stg_imp_invest_20260519             inv
 INNER JOIN  crm_cp_email_sfid_prod              cpe ON  cpe.EmailAddress    = inv.email
@@ -111,11 +114,40 @@ INNER  JOIN  crm_loyality_sfid_prod              loy ON  loy.ContactId       = c
 WHERE   cpe.EmailAddress    IS NOT NULL
   AND   LEFT(cpe.PartyID__c, 3) = '003'
   AND   inv.fname             = acc.FirstName
+  AND	inv.points > 0
+  
+  AND loy.LegacyMemberId__c not in 
+	(SELECT    LegacyMemberId__c
+		from crm_loyality_sfid_prod
+		where LegacyMemberId__c is not null
+		group by LegacyMemberId__c having count(*) > 1)
+
   AND  inv.`conda_uid` not in ('1f1b59df-979a-4dc2-92bb-6d568f0e7572', 
 'a69ac4fe-2593-4a65-8046-f773d6d8b608', 
 '564a5c90-e958-4da7-9194-4c856277bd07',
 '4649f898-2b80-44b0-958c-886466c9bef7');
 
+
+select *
+from stg_imp_invest_20260519 a
+where exists ( select b.conda_uid from stg_imp_invest_new_investors_20260519 b where a.conda_uid = b.conda_uid   )
+
+left join stg_imp_invest_new_investors_20260519 b
+	on a.conda_uid 
+
+select * from stg_imp_invest_all_investors_points b
+
+ALTER TABLE stg_imp_invest_20260519
+  ADD COLUMN points INT NULL;
+
+update stg_imp_invest_20260519 a
+inner join stg_imp_invest_all_investors_points b
+	on a.conda_uid = b.conda_uid
+set   a.points = b.points
+where a.conda_uid = b.conda_uid
+
+
+stg_imp_invest_all_investors_points
 
 
 update stg_imp_invest_20260519 set date_of_birth = '01.01.1900' where date_of_birth is null 
@@ -125,45 +157,42 @@ select * from stg_imp_invest_20260519  where date_of_birth   is null
 select * from stg_imp_invest_20260519 order by date_of_birth 
 
 
-SELECT
-    inv.date_of_birth,
-    SUBSTRING_INDEX(inv.date_of_birth, '.', 1) AS day_part,
-    SUBSTRING_INDEX(SUBSTRING_INDEX(inv.date_of_birth, '.', 2), '.', -1) AS month_part,
-    SUBSTRING_INDEX(inv.date_of_birth, '.', -1) AS year_part,
-    LENGTH(inv.date_of_birth) AS len,
-    HEX(inv.date_of_birth) AS hex_value,
-    COUNT(*) AS cnt
-FROM stg_imp_invest_20260519 inv
-GROUP BY
-    inv.date_of_birth,
-    day_part,
-    month_part,
-    year_part,
-    len,
-    hex_value
-ORDER BY cnt DESC;
+
+select *
+from crm_loyality_sfid_prod
+where LegacyMemberId__c not in 
+	(SELECT    LegacyMemberId__c
+		from crm_loyality_sfid_prod
+		where LegacyMemberId__c is not null
+		group by LegacyMemberId__c having count(*) > 1)
+and DATE(CreatedDate) = '2026-05-28'
 
 
+
+select *
+from crm_loyality_sfid_prod
+where ContactId in 
+	(SELECT    ContactId
+		from crm_loyality_sfid_prod
+		group by ContactId having count(*) > 1)
+and DATE(CreatedDate) = '2026-05-28'
+
+
+SELECT * from crm_loyality_sfid_prod where LegacyMemberId__c = 'bernhard@unserwein.at'
 
 SELECT *
 FROM stg_imp_invest_20260519 inv
 WHERE inv.`conda_uid` in ('1f1b59df-979a-4dc2-92bb-6d568f0e7572', 
 'a69ac4fe-2593-4a65-8046-f773d6d8b608', 
 '564a5c90-e958-4da7-9194-4c856277bd07',
-'4649f898-2b80-44b0-958c-886466c9bef7')
+'4649f898-2b80-44b0-958c-886466c9bef7', 
+'32eb57a9-f68d-47ac-857b-9939dfe8296a')
 
 
-select * from crm_imp_person_accounts
-'Ambassador'
-select * from crm
 
-Ambassador 
-update crm_imp_person_accounts set investment_status = TRIM(REPLACE(investment_status, CONVERT(0xC2A0 USING utf8mb4), ''))
 
-inv.status_ablaufdatum
-select * from 
-'07.03.1995'
-'inv.status_ablaufdatum'
+select * from stg_imp_invest_20260519  where conda_uid = '9827e882-a66c-42fe-a22e-6215302a0e7f'
+
 
 CALL sp_archive_crm_import_contacts(
     'protel_2026-05-28_initial',
@@ -171,9 +200,17 @@ CALL sp_archive_crm_import_contacts(
     
     
 CALL sp_archive_crm_imp_person_accounts(
-    'conda_2026-05-28_invest_enrichment',
+    '2026-05-28_invest_points_migration',
     'oleg.danilov')
 
 
-select * from crm_imp_person_accounts
+
+    
+  
+    select * from crm_imp_person_accounts where _points_processed_at is null
+
+    
+    
+
+
 

@@ -212,35 +212,35 @@ def create_consent_df() -> pd.DataFrame:
 
 if __name__ == "__main__":
 
-    # # # # # Account 
+    # # # # # # Account 
     df_acc = sf_query(ACCOUNT_QUERY)
     df_acc.to_parquet(ACCOUNT_PATH, index=False)
     save_object_in_mysqL(ACCOUNT_PATH,ACCOUNT_TABLE)
 
     print('Account done')
 
-    # # # # Loyality
+    # # # # # Loyality
     df_loy = sf_query(LOYALITY_QUERY)
     df_loy.to_parquet(LOYALITY_PATH, index=False)
     save_object_in_mysqL(LOYALITY_PATH,LOYALITY_TABLE)
 
     print('Loyality done')
 
-    # # # # Lead
+    # # # # # Lead
     df_lea = sf_query(LEAD_QUERY)
     df_lea.to_parquet(LEAD_PATH, index=False)
     save_object_in_mysqL(LEAD_PATH,LEAD_TABLE)
 
     print('Lead done')
 
-    # # # # Reservation
+    # # # # # Reservation
     df_res = sf_query(RESERVATION_QUERY)
     df_res.to_parquet(RESERVATION_PATH, index=False)
     save_object_in_mysqL(RESERVATION_PATH, RESERVATION_TABLE)
 
     print('Reservation done')
 
-    # # # # # CPE  
+    # # # # # # CPE  
     df_cpe = sf_query(CP_EMAIL_QUERY)
     df_cpe.to_parquet(CP_EMAIL_PATH, index=False)
     save_object_in_mysqL(CP_EMAIL_PATH,CP_EMAIL_TABLE)
@@ -261,4 +261,4 @@ if __name__ == "__main__":
 
     print('Consent done')
 
-    #print(df_consent.dtypes)
+    print(df_consent.dtypes)

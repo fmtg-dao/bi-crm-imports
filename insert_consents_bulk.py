@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 # --- Logging Setup ---
-log_path = Path("logs/insert_transaction_journals_bulk.log")
+log_path = Path("logs/insert_contact_point_consents_bulk.log")
 log_path.parent.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -21,21 +21,27 @@ logging.basicConfig(
 )
 
 # --- Constants ---
-OBJECT_NAME = "TransactionJournal"
-BATCH_SIZE = 500
+OBJECT_NAME = "ContactPointConsent"
+BATCH_SIZE = 5000
 POLL_INTERVAL_SEC = 10
 MAX_POLL_ATTEMPTS = 60
 
 # Steuert, welcher Batch aus crm_imp_person_accounts gezogen wird.
 # Wird per CLI-Arg überschreibbar gemacht (siehe main()).
-DEFAULT_BATCH_ID = "2026-05-28_invest_points_migration"
+DEFAULT_BATCH_ID = "conda_2026-05-19_new_investors_b1_new"
 
-# --- TJ-Konstanten für diese Nachmigration ---
-# TODO: SF-Ids vor dem Lauf eintragen
-LOYALTY_PROGRAM_ID  = "0lpTe000000004rIAA"   # Loyalty Program in Salesforce
-JOURNAL_TYPE_ID     = "0lEd10000001oafEAA"    # JournalType: Accrual (Punkte-Gutschrift)
-#JOURNAL_SUBTYPE_ID  = "0lwTe000000000ABC"    # JournalSubType: Manual / Legacy Migration
-SOURCE_SYSTEM       = "conda"
+# --- Consent-Konstanten für DIESEN Lauf ---
+# WICHTIG: Pro Lauf genau EIN Purpose. Für andere Purposes (residences, invest)
+# müssen ALLE DREI zusammen geändert werden, sonst stimmt Status nicht zum Flag:
+#   CONSENT_NAME, DATA_USE_PURPOSE_ID  und  CONSENT_FLAG_COLUMN
+CONSENT_NAME           = "marketing_central"
+DATA_USE_PURPOSE_ID    = "0ZWTe0000000X7FOAU"   # marketing_central
+PRIVACY_CONSENT_STATUS = "OptIn"
+
+# Spalte in crm_imp_person_accounts, die die Einwilligung für DIESEN Purpose hält.
+# Nur Zeilen mit = 1 bekommen ein OptIn — sonst würden wir Einwilligungen
+# für Personen schreiben, die nie zugestimmt haben.
+CONSENT_FLAG_COLUMN    = "consent_central"
 
 
 # --- Helpers ---
@@ -60,32 +66,27 @@ def sf_date(value: Optional[Union[date, datetime]]) -> Optional[str]:
 
 def row_to_sf_record(row: dict) -> dict:
     """
-    Mappt eine Zeile aus crm_imp_person_accounts auf einen Salesforce TransactionJournal-Insert.
+    Mappt eine Zeile aus crm_imp_person_accounts auf einen
+    Salesforce ContactPointConsent-Insert.
 
     Insert: SF vergibt die Id, External-IDs gibt es nicht.
-    MemberId (= sf_loyalty_member_id) dient als Matchback-Key (1:1 TJ je Member).
+    ContactPointId (= sf_cp_email_id) dient als Matchback-Key (1:1 Consent je CPE/Purpose/Lauf).
     None-Felder werden am Ende entfernt.
     """
+    now = sf_datetime(datetime.now(timezone.utc))
+
     record = {
-        # --- Pflichtfelder ---
-        "ActivityDate":             sf_datetime(datetime.now(timezone.utc)),
-        "Status":                   "Pending",
-
-        # --- Lookups (per SF-Id) ---
-        "MemberId":                 row.get("sf_loyalty_member_id"),
-        "JournalTypeId":            JOURNAL_TYPE_ID,
-        #"JournalSubTypeId":         JOURNAL_SUBTYPE_ID,
-        "LoyaltyProgramId":         LOYALTY_PROGRAM_ID,
-
-        # --- Punkte (Kernfeld dieser Migration) ---
-        "Points__c":                row.get("loyalty_points_balance"),
+        "Name":                 CONSENT_NAME,
+        "ContactPointId":       row.get("sf_cp_email_id"),   # CPE des Contacts/Accounts
+        "DataUsePurposeId":     DATA_USE_PURPOSE_ID,
+        "PrivacyConsentStatus": PRIVACY_CONSENT_STATUS,
+        "CaptureDate":          now,                          # today
+        "CaptureSource":        row.get("source"),
+        "EffectiveFrom":        now,                          # today
+        # Property__c: für Central-Consents nicht relevant → weggelassen
 
         # --- Tracking ---
-        "SourceSystem__c":          SOURCE_SYSTEM,
-        #"ExternalMemberId__c":      row.get("external_id"),
-
-        # --- Optional: Beschreibung für Audit ---
-        "Description__c":           "Investor Migration Points",
+        "SourceSystem__c":      row.get("source"),
     }
 
     # None-Werte entfernen
@@ -152,7 +153,7 @@ def fetch_failed_records(sf: SalesforceClientCC, job_id: str) -> list[dict]:
 
 
 def save_failed_records(failed: list[dict], batch_index: int, batch_id: str) -> None:
-    out_path = Path(f"local_data/failed_transaction_journals_{batch_id}_batch_{batch_index}.json")
+    out_path = Path(f"local_data/failed_contact_point_consents_{batch_id}_batch_{batch_index}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(failed, f, indent=2)
@@ -160,17 +161,17 @@ def save_failed_records(failed: list[dict], batch_index: int, batch_id: str) -> 
 
 
 # --- DB Helpers ---
-def mark_points_processed(db: MySQLClient, batch_id: str, row_ids: list[int]) -> None:
+def mark_consent_processed(db: MySQLClient, batch_id: str, row_ids: list[int]) -> None:
     """
-    Setzt _points_processed_at = NOW() für erfolgreich verarbeitete Records über row_id.
-    (Keine sf_transaction_id-Spalte vorhanden → es wird nur der Status gesetzt.)
+    Setzt _consent_processed_at = NOW() für erfolgreich verarbeitete Records über row_id.
+    (Keine sf_consent_id-Spalte vorhanden → es wird nur der Status gesetzt.)
     """
     if not row_ids:
         return
     placeholders = ",".join(["%s"] * len(row_ids))
     sql = f"""
         UPDATE crm_imp_person_accounts
-        SET    _points_processed_at = NOW()
+        SET    _consent_processed_at = NOW()
         WHERE  _batch_id = %s
           AND  row_id    IN ({placeholders})
     """
@@ -183,25 +184,24 @@ def main():
 
     batch_id = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BATCH_ID
 
-    print(f"insert_transaction_journals_bulk | start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  → batch_id: {batch_id}")
+    print(f"insert_contact_point_consents_bulk | start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  → batch_id: {batch_id} | purpose: {CONSENT_NAME} | flag: {CONSENT_FLAG_COLUMN}")
 
     # 1. Daten aus MySQL laden
-    #    Gate: Loyalty-Schritt muss durch sein (sf_loyalty_member_id vorhanden),
-    #    Punkte-Schritt noch offen. Nur Zeilen mit tatsächlichem Punktestand.
+    #    Gate: CPE muss vorhanden sein (ContactPointId-Pflicht), Consent-Schritt offen,
+    #    und NUR Zeilen mit gesetztem Einwilligungs-Flag für diesen Purpose.
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
     rows = db.fetch_all(
-        """
+        f"""
         SELECT *
         FROM   crm_imp_person_accounts
-        WHERE  _batch_id              = %s
-          AND  _excluded              = 0
-          -- AND  _loyalty_processed_at  IS NOT NULL
-          AND  sf_loyalty_member_id   IS NOT NULL
-          AND  _points_processed_at   IS NULL
-          AND  loyalty_points_balance IS NOT NULL
+        WHERE  _batch_id             = %s
+          AND  _excluded             = 0
+          AND  sf_cp_email_id        IS NOT NULL
+          AND  {CONSENT_FLAG_COLUMN} = 1
+          AND  _consent_processed_at IS NULL
         """,
         (batch_id,),
     )
@@ -211,18 +211,17 @@ def main():
         print("  → Keine Records zu verarbeiten. Ende.")
         return
 
-    # 2. Mapping — MemberId (= sf_loyalty_member_id) als Matchback-Key zu row_id behalten.
-    #    (1:1 TJ je Member → MemberId ist im Upload eindeutig.)
+    # 2. Mapping — ContactPointId (= sf_cp_email_id) als Matchback-Key zu row_id behalten.
     records: list[dict] = []
-    memberid_to_row_id: dict[str, int] = {}
+    cpid_to_row_id: dict[str, int] = {}
 
     for row in rows:
-        member_id = row.get("sf_loyalty_member_id")
-        if not member_id:
-            logging.error(f"row_id {row.get('row_id')} ohne sf_loyalty_member_id — übersprungen")
+        cp_id = row.get("sf_cp_email_id")
+        if not cp_id:
+            logging.error(f"row_id {row.get('row_id')} ohne sf_cp_email_id — übersprungen")
             continue
         records.append(row_to_sf_record(row))
-        memberid_to_row_id[str(member_id)] = row["row_id"]
+        cpid_to_row_id[str(cp_id)] = row["row_id"]
 
     # 3. Salesforce Auth
     cfg_sfcc = load_salesforce_cc_config_from_env()
@@ -254,12 +253,12 @@ def main():
                     logging.error(f"Batch {i+1} | Job {job_id} komplett fehlgeschlagen: {status}")
                     continue
 
-                # --- Erfolgreiche Records: MemberId → row_id (keine sf-Id-Rückschreibung nötig) ---
+                # --- Erfolgreiche Records: ContactPointId → row_id ---
                 if status.get("numberRecordsProcessed", 0) > status.get("numberRecordsFailed", 0):
                     succeeded = fetch_successful_records(sf, job_id)
                     for s in succeeded:
-                        member_id = s.get("MemberId")
-                        row_id    = memberid_to_row_id.get(str(member_id))
+                        cp_id  = s.get("ContactPointId")
+                        row_id = cpid_to_row_id.get(str(cp_id))
                         if row_id is not None:
                             succeeded_row_ids.append(row_id)
 
@@ -274,17 +273,17 @@ def main():
                 logging.exception(f"Batch {i+1} | Unerwarteter Fehler")
                 print(f"  ✗ Batch {i+1} Fehler: {e}")
 
-        # 4. _points_processed_at in MySQL setzen für erfolgreiche Records
+        # 4. _consent_processed_at in MySQL setzen für erfolgreiche Records
         if succeeded_row_ids:
-            print(f"\n  → Markiere {len(succeeded_row_ids)} Records als _points_processed_at = NOW()")
-            mark_points_processed(db, batch_id, succeeded_row_ids)
+            print(f"\n  → Markiere {len(succeeded_row_ids)} Records als _consent_processed_at = NOW()")
+            mark_consent_processed(db, batch_id, succeeded_row_ids)
 
-    print(f"\ninsert_transaction_journals_bulk | end: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\ninsert_contact_point_consents_bulk | end: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  → Erfolgreich:           {len(succeeded_row_ids)}")
     print(f"  → Fehlgeschlagen:        {len(total_failed)}")
 
     if total_failed:
-        all_failed_path = Path(f"local_data/batch/all_failed_transaction_journals_{batch_id}.json")
+        all_failed_path = Path(f"local_data/batch/all_failed_contact_point_consents_{batch_id}.json")
         all_failed_path.parent.mkdir(parents=True, exist_ok=True)
         with open(all_failed_path, "w") as f:
             json.dump(total_failed, f, indent=2)

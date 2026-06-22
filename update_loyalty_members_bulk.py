@@ -29,7 +29,7 @@ MAX_POLL_ATTEMPTS = 60
 
 # Steuert, welcher Batch aus crm_imp_person_accounts gezogen wird.
 # Wird per CLI-Arg überschreibbar gemacht (siehe main()).
-DEFAULT_BATCH_ID = "conda_2026-05-28_invest_loyalty_upt"
+DEFAULT_BATCH_ID = "legacy_tier_correction_20260608"
 
 
 # --- Helpers ---
@@ -76,7 +76,7 @@ def row_to_sf_record(row: dict) -> dict:
 
         # --- Legacy / Migration Felder (Custom) ---
         "LegacyTier__c":                        row.get("loyalty_legacy_tier"),
-        "LegacyMemberId__c":                      row.get("loyalty_legacy_number"),
+        #"LegacyMemberId__c":                      row.get("loyalty_legacy_number"),
 
         # --- Source Tracking (Custom) ---
         #"SourceSystem__c":                      row.get("source"),
