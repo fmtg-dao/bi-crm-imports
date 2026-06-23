@@ -28,7 +28,7 @@ MAX_POLL_ATTEMPTS = 60
 
 # Steuert, welcher Batch aus crm_imp_person_accounts gezogen wird.
 # Wird per CLI-Arg überschreibbar gemacht (siehe main()).
-DEFAULT_BATCH_ID = "conda_2026-05-19_new_investors_b1_new"
+DEFAULT_BATCH_ID = "2026-06-22_new_investor_import"
 
 # --- Loyalty-Konstanten für diese Migration ---
 # TODO: SF-Id deines Loyalty Programs vor dem Lauf eintragen

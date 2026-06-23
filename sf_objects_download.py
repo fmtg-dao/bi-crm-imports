@@ -213,52 +213,52 @@ def create_consent_df() -> pd.DataFrame:
 if __name__ == "__main__":
 
     # # # # # # Account 
-    df_acc = sf_query(ACCOUNT_QUERY)
-    df_acc.to_parquet(ACCOUNT_PATH, index=False)
-    save_object_in_mysqL(ACCOUNT_PATH,ACCOUNT_TABLE)
+    # df_acc = sf_query(ACCOUNT_QUERY)
+    # df_acc.to_parquet(ACCOUNT_PATH, index=False)
+    # save_object_in_mysqL(ACCOUNT_PATH,ACCOUNT_TABLE)
 
-    print('Account done')
+    # print('Account done')
 
-    # # # # # Loyality
+    # # # # # # Loyality
     df_loy = sf_query(LOYALITY_QUERY)
     df_loy.to_parquet(LOYALITY_PATH, index=False)
     save_object_in_mysqL(LOYALITY_PATH,LOYALITY_TABLE)
 
     print('Loyality done')
 
-    # # # # # Lead
-    df_lea = sf_query(LEAD_QUERY)
-    df_lea.to_parquet(LEAD_PATH, index=False)
-    save_object_in_mysqL(LEAD_PATH,LEAD_TABLE)
+    # # # # # # Lead
+    # df_lea = sf_query(LEAD_QUERY)
+    # df_lea.to_parquet(LEAD_PATH, index=False)
+    # save_object_in_mysqL(LEAD_PATH,LEAD_TABLE)
 
-    print('Lead done')
+    # print('Lead done')
 
-    # # # # # Reservation
-    df_res = sf_query(RESERVATION_QUERY)
-    df_res.to_parquet(RESERVATION_PATH, index=False)
-    save_object_in_mysqL(RESERVATION_PATH, RESERVATION_TABLE)
+    # # # # # # Reservation
+    # df_res = sf_query(RESERVATION_QUERY)
+    # df_res.to_parquet(RESERVATION_PATH, index=False)
+    # save_object_in_mysqL(RESERVATION_PATH, RESERVATION_TABLE)
 
-    print('Reservation done')
+    # print('Reservation done')
 
-    # # # # # # CPE  
-    df_cpe = sf_query(CP_EMAIL_QUERY)
-    df_cpe.to_parquet(CP_EMAIL_PATH, index=False)
-    save_object_in_mysqL(CP_EMAIL_PATH,CP_EMAIL_TABLE)
+    # # # # # # # CPE  
+    # df_cpe = sf_query(CP_EMAIL_QUERY)
+    # df_cpe.to_parquet(CP_EMAIL_PATH, index=False)
+    # save_object_in_mysqL(CP_EMAIL_PATH,CP_EMAIL_TABLE)
 
-    print('CPE done')
+    # print('CPE done')
  
-    # # # # # CPC  
-    df_cpc = sf_query(CP_CONSENT_QUERY)
-    df_cpc.to_parquet(CP_CONSENT_PATH, index=False)
-    save_object_in_mysqL(CP_CONSENT_PATH,CP_CONSENT_TABLE)
+    # # # # # # CPC  
+    # df_cpc = sf_query(CP_CONSENT_QUERY)
+    # df_cpc.to_parquet(CP_CONSENT_PATH, index=False)
+    # save_object_in_mysqL(CP_CONSENT_PATH,CP_CONSENT_TABLE)
 
-    print('CPC done')
+    # print('CPC done')
 
-    # # # # # # Consent 
-    df_consent = create_consent_df()
-    df_consent.to_parquet('local_data/sf_object_data/consent_prod.parquet', index=False)
-    save_object_in_mysqL('local_data/sf_object_data/consent_prod.parquet','crm_consent_sfid_prod')
+    # # # # # # # Consent 
+    # df_consent = create_consent_df()
+    # df_consent.to_parquet('local_data/sf_object_data/consent_prod.parquet', index=False)
+    # save_object_in_mysqL('local_data/sf_object_data/consent_prod.parquet','crm_consent_sfid_prod')
 
-    print('Consent done')
+    # print('Consent done')
 
-    print(df_consent.dtypes)
+    # print(df_consent.dtypes)

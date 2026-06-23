@@ -29,7 +29,7 @@ MAX_POLL_ATTEMPTS = 60
 
 # Steuert, welcher Batch aus crm_imp_person_accounts gezogen wird.
 # Wird per CLI-Arg überschreibbar gemacht (siehe main()).
-DEFAULT_BATCH_ID = "conda_2026-05-28_invest_enrichment"
+DEFAULT_BATCH_ID = "2026-06-22_update_invest_status"
 
 
 # --- Helpers ---
