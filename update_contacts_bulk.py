@@ -29,7 +29,7 @@ MAX_POLL_ATTEMPTS = 60
 
 # Steuert, welcher Batch aus crm_imp_person_accounts gezogen wird.
 # Wird per CLI-Arg überschreibbar gemacht (siehe main()).
-DEFAULT_BATCH_ID = "2026-06-22_update_invest_status"
+DEFAULT_BATCH_ID = "2026-07-22_update_invest_status_1"
 
 
 # --- Helpers ---

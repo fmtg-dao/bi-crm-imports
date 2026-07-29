@@ -40,5 +40,5 @@ if __name__ == "__main__":
 
 
 
-    path = 'local_data/csv/20260622_investors_formated.csv'
-    save_object_in_mysqL(path, 'stg_imp_investors_formated', delimiter=";")
+    path = 'local_data/csv/20260728_ausnahmen_investor.csv'
+    save_object_in_mysqL(path, 'stg_imp_investors_formated_20260722', delimiter=";")

@@ -1,20 +1,22 @@
 /* prepare table */
 
-select * from  stg_imp_investors_formated_20260722_2026070
+select * from  stg_imp_investors_formated_20260722
 
-ALTER TABLE stg_imp_investors_formated_20260722_2026070
+
+
+ALTER TABLE stg_imp_investors_formated_20260722
 ADD COLUMN investment_expiration_date_corrected DATE;
 
-UPDATE stg_imp_investors_formated_20260722_2026070
+UPDATE stg_imp_investors_formated_20260722
 SET investment_expiration_date_corrected = STR_TO_DATE(investment_expiration_date, '%d.%m.%Y')
 WHERE investment_expiration_date IS NOT NULL
   AND TRIM(investment_expiration_date) <> '';
 
 
-ALTER TABLE stg_imp_investors_formated_20260722_2026070
+ALTER TABLE stg_imp_investors_formated_20260722
 ADD COLUMN data_issue BOOLEAN NOT NULL DEFAULT 0;
 
-UPDATE stg_imp_investors_formated_20260722_2026070
+UPDATE stg_imp_investors_formated_20260722
 SET birth_date_corrected = STR_TO_DATE(birth_date, '%d.%m.%Y')
 WHERE birth_date IS NOT NULL
   AND TRIM(birth_date) <> ''
