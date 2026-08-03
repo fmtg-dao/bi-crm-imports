@@ -46,7 +46,7 @@ CREATE INDEX idx_person_external_id_email
 
 select * from stg_imp_investors_formated_20260722 where info <> 'bestand'
 select count(*) from stg_imp_investors_formated_20260722 where info = 'neu'
-
+select * from stg_imp_investors_formated_20260722 where info = 'bestand'
 select * from stg_imp_investors_formated_20260722
 
 
@@ -74,6 +74,9 @@ and c.ExternalID__pc is not null
 
 -- 242 neue invstoren
 -- 197 bereits vorhanden
+
+
+select count(*) from crm_person_account_sfid_prod
 
 
 select count(*) 
@@ -272,7 +275,7 @@ INSERT INTO crm_imp_person_accounts (
 )
 SELECT distinct
     'update'                                            AS _operation,
-    '2026-07-22_update_invest_status_1'	                AS _batch_id,
+    '2026-07-28_ausnahmen_update'		                AS _batch_id,
 
     acc.Id                                              AS sf_account_id,
     acc.PersonContactId                                 AS sf_person_contact_id,
@@ -398,7 +401,7 @@ INSERT INTO crm_imp_person_accounts (
 )
 SELECT distinct
     'insert'                                            AS _operation,
-    '2026-07-22_new_investor_import'	                AS _batch_id,
+    '2026-07-28_ausnahmen_insert_new'	                AS _batch_id,
 
     null                                                AS sf_account_id,
     null				                                AS sf_person_contact_id,
@@ -448,7 +451,7 @@ WHERE inv.data_issue = 0
       FROM crm_person_account_sfid_prod acc
       WHERE acc.ExternalID__pc = inv.external_id
   )
-  AND NOT EXISTS (
+ AND NOT EXISTS (
       SELECT 1
       FROM crm_loyality_sfid_prod loy
       WHERE loy.LegacyMemberId__c = inv.email
@@ -456,12 +459,15 @@ WHERE inv.data_issue = 0
 
     
 
-select * from 202
 
+select count(*) 
+from crm_imp_person_accounts 
+where _batch_id = '2026-07-28_ausnahmen_insert_new'
+    
 
 select count(*) 
 from crm_imp_person_accounts_history
-where _batch_id = '2026-07-22_update_invest_status_1'
+where _batch_id = '2026-07-28_ausnahmen_insert_new'
 
 select * 
 from crm_imp_person_accounts
@@ -473,7 +479,7 @@ where data_issue = 1
 /* after completion archive */
    
 CALL sp_archive_crm_imp_person_accounts(
-    '2026-07-22_new_investor_import',
+    '2026-07-28_ausnahmen_insert_new',
     'oleg.danilov')
 
 
@@ -552,3 +558,8 @@ left join  crm_person_account_sfid_prod acc
 where acc.ExternalID__pc is null
 
 
+
+
+select * from map_segments_protel msp 
+
+select * from map_segments_apaleo msa 

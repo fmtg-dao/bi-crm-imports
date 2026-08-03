@@ -146,3 +146,28 @@ FROM (
 GROUP BY id
 HAVING d_cnt <> 0 OR ABS(d_net) > 0.01
 ORDER BY ABS(d_net) DESC;
+
+
+
+
+
+
+
+
+
+
+
+
+select * from V2V_PropertyOpenDays
+
+
+
+
+
+
+
+
+
+
+
+
