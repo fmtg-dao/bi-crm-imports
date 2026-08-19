@@ -56,6 +56,15 @@ Salesforce before starting it again.
 `CREATE INDEX` block. A mirror refresh drops every index, and the consent join then takes
 about 106 seconds instead of 3.
 
+`refresh_sf_mirrors.py` re-downloads Account, ContactPointEmail, ContactPointConsent, and
+Lead from Salesforce production and rebuilds the merged consent table in the
+`crm_*_sfid_prod` mirrors. Run it from the repository root when the mirrors are stale.
+
+	./.venv/Scripts/python.exe camping-grubhof-import/refresh_sf_mirrors.py
+
+Every mirror table is replaced, which drops its indexes, so re-run the `CREATE INDEX` block
+from the SQL afterward.
+
 ## Changes since the run
 
 Commit `1c819cc` holds both scripts exactly as they ran. The versions in this folder now
