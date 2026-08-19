@@ -8,6 +8,11 @@ Person Account for an email that already exists as a Lead — the same third-tab
 NOT EXISTS pattern the investor import used against the loyalty legacy table.
 """
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from sf_objects_download import (
     ACCOUNT_PATH, ACCOUNT_QUERY, ACCOUNT_TABLE,
     CP_CONSENT_PATH, CP_CONSENT_QUERY, CP_CONSENT_TABLE,
