@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# config, mysql_client und salesforce_client_prod liegen im Repo-Root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from config import load_mysql_config
 from mysql_client import MySQLClient
 from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
@@ -7,9 +13,7 @@ import json
 import csv
 import io
 import time as time_module
-import urllib.parse
 import logging
-from pathlib import Path
 
 # --- Logging Setup ---
 log_path = Path("logs/insert_person_accounts_bulk.log")
@@ -35,9 +39,7 @@ DEFAULT_BATCH_ID = "2026-08-10_new_camping_import"
 # ExternalID__pc ist Text(40) → conda_uid muss <= 40 Zeichen sein.
 EXTERNAL_ID_FIELD = "ExternalID__pc"
 
-# --- Person-Account-Konstanten für diese Migration ---
-# TODO: RecordTypeId des Person-Account-RecordTypes vor dem Lauf eintragen.
-# Ohne korrekten Person-Account-RecordType legt SF einen Business Account an!
+# Ohne diesen RecordType legt SF einen Business Account an, keinen Person Account.
 PERSON_ACCOUNT_RECORD_TYPE_ID = "012Te0000018UgIIAU"
 
 
@@ -185,25 +187,20 @@ def fetch_person_contact_ids(sf: SalesforceClientCC, account_ids: list[str]) -> 
     for chunk in chunked(account_ids, 200):
         ids = ",".join(f"'{i}'" for i in chunk)
         soql = f"SELECT Id, PersonContactId FROM Account WHERE Id IN ({ids})"
-        url = f"{sf._base()}/query/?q={urllib.parse.quote(soql)}"
-
-        while url:
-            r = sf._client.get(url)
-            if r.status_code != 200:
-                raise RuntimeError(f"Query PersonContactId failed ({r.status_code}): {r.text}")
-            data = r.json()
-            for rec in data.get("records", []):
-                mapping[rec["Id"]] = rec.get("PersonContactId")
-            # Pagination, falls > 2000 Records (sollte bei 200er-Chunks nicht passieren)
-            next_url = data.get("nextRecordsUrl")
-            url = f"{sf._instance_url()}{next_url}" if next_url else None
+        for rec in sf.query_all(soql).get("records", []):
+            mapping[rec["Id"]] = rec.get("PersonContactId")
 
     return mapping
 
 
 # --- DB Helpers ---
 def write_account_ids(db: MySQLClient, batch_id: str, pairs: list[tuple[int, str]]) -> None:
-    """Schreibt sf_account_id zurück und setzt _account_processed_at = NOW(). pairs: (row_id, account_id)."""
+    """
+    Schreibt sf_account_id zurück und setzt _account_processed_at = NOW(). pairs: (row_id, account_id).
+
+    Alle Zeilen eines Bulk-Batches in EINER Transaktion: db.execute() committet sonst
+    pro Zeile, und ein Abbruch mitten im Writeback liesse die Haelfte markiert.
+    """
     sql = """
         UPDATE crm_imp_person_accounts
         SET    sf_account_id        = %s,
@@ -211,8 +208,11 @@ def write_account_ids(db: MySQLClient, batch_id: str, pairs: list[tuple[int, str
         WHERE  _batch_id = %s
           AND  row_id    = %s
     """
-    for row_id, account_id in pairs:
-        db.execute(sql, (account_id, batch_id, row_id))
+    with db.transaction() as conn:
+        for row_id, account_id in pairs:
+            affected = db.execute(sql, (account_id, batch_id, row_id), conn=conn)
+            if affected != 1:
+                raise RuntimeError(f"row_id {row_id}: {affected} Zeilen aktualisiert, erwartet 1")
 
 
 def write_person_contact_ids(db: MySQLClient, batch_id: str, pairs: list[tuple[str, str]]) -> None:
@@ -223,15 +223,14 @@ def write_person_contact_ids(db: MySQLClient, batch_id: str, pairs: list[tuple[s
         WHERE  _batch_id     = %s
           AND  sf_account_id = %s
     """
-    for account_id, contact_id in pairs:
-        if contact_id:
-            db.execute(sql, (contact_id, batch_id, account_id))
+    with db.transaction() as conn:
+        for account_id, contact_id in pairs:
+            if contact_id:
+                db.execute(sql, (contact_id, batch_id, account_id), conn=conn)
 
 
 # --- Main ---
 def main():
-    import sys
-
     batch_id = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BATCH_ID
 
     print(f"insert_person_accounts_bulk | start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -246,6 +245,7 @@ def main():
         SELECT *
         FROM   crm_imp_person_accounts
         WHERE  _batch_id             = %s
+          AND  _operation            = 'insert'
           AND  _excluded             = 0
           AND  _account_processed_at IS NULL
         """,
@@ -277,7 +277,7 @@ def main():
 
         total_failed = []
         inserted_pairs: list[tuple[int, str]] = []   # (row_id, account_id) → für sf_account_id-Writeback
-        all_account_ids: list[str] = []              # für PersonContactId-Nachladung
+        job_errors: list[str] = []
 
         for i, start in enumerate(range(0, len(records), BATCH_SIZE)):
             batch_records = records[start : start + BATCH_SIZE]
@@ -295,21 +295,32 @@ def main():
                 print(f"  → Job geschlossen (UploadComplete)")
 
                 status = poll_job(sf, job_id)
+                state = status.get("state")
 
-                if status.get("state") == "Failed":
-                    logging.error(f"Batch {i+1} | Job {job_id} komplett fehlgeschlagen: {status}")
+                # Auch ein 'Failed'- oder 'Aborted'-Job kann Records committed haben,
+                # und SF liefert successfulResults fuer jeden Endzustand. Deshalb erst
+                # zurueckschreiben, dann den Batch als Fehler markieren. Ein sofortiges
+                # continue wuerde diese Accounts beim naechsten Lauf doppelt anlegen.
+                succeeded = fetch_successful_records(sf, job_id)
+                batch_pairs: list[tuple[int, str]] = []
+                for s in succeeded:
+                    ext_id = s.get(EXTERNAL_ID_FIELD)
+                    acc_id = s.get("sf__Id")
+                    row_id = extid_to_row_id.get(str(ext_id))
+                    if row_id is not None and acc_id:
+                        batch_pairs.append((row_id, acc_id))
+
+                # Writeback je Batch, nicht erst am Ende: bricht der Lauf ab,
+                # steht in MySQL, was in SF wirklich schon existiert.
+                if batch_pairs:
+                    write_account_ids(db, batch_id, batch_pairs)
+                    inserted_pairs.extend(batch_pairs)
+                    print(f"  → {len(batch_pairs)} sf_account_id geschrieben")
+
+                if state != "JobComplete":
+                    job_errors.append(f"Batch {i+1} | Job {job_id} | state {state}")
+                    logging.error(f"Batch {i+1} | Job {job_id} state {state}: {status}")
                     continue
-
-                # --- Erfolgreiche Records: external_id → Account.Id → row_id ---
-                if status.get("numberRecordsProcessed", 0) > status.get("numberRecordsFailed", 0):
-                    succeeded = fetch_successful_records(sf, job_id)
-                    for s in succeeded:
-                        ext_id = s.get(EXTERNAL_ID_FIELD)
-                        acc_id = s.get("sf__Id")
-                        row_id = extid_to_row_id.get(str(ext_id))
-                        if row_id is not None and acc_id:
-                            inserted_pairs.append((row_id, acc_id))
-                            all_account_ids.append(acc_id)
 
                 # --- Fehlgeschlagene Records ---
                 if status.get("numberRecordsFailed", 0) > 0:
@@ -322,16 +333,27 @@ def main():
                 logging.exception(f"Batch {i+1} | Unerwarteter Fehler")
                 print(f"  ✗ Batch {i+1} Fehler: {e}")
 
-        # 4. sf_account_id + _account_processed_at zurückschreiben
-        if inserted_pairs:
-            print(f"\n  → Schreibe {len(inserted_pairs)} sf_account_id zurück + _account_processed_at = NOW()")
-            write_account_ids(db, batch_id, inserted_pairs)
-
-        # 5. PersonContactId nachladen und sf_person_contact_id zurückschreiben
-        if all_account_ids:
-            print(f"  → Lade PersonContactId für {len(all_account_ids)} Accounts nach")
-            contact_map = fetch_person_contact_ids(sf, all_account_ids)
-            contact_pairs = [(acc_id, contact_map.get(acc_id)) for acc_id in all_account_ids]
+        # 4. PersonContactId nachladen und sf_person_contact_id zurückschreiben.
+        #    Die Account-Ids kommen aus MySQL, nicht aus dem Lauf: so holt dieser
+        #    Schritt auch Zeilen nach, die ein abgebrochener frueherer Lauf
+        #    zurueckgeschrieben, aber nie mit einem Contact verbunden hat.
+        open_accounts = [
+            r["sf_account_id"]
+            for r in db.fetch_all(
+                """
+                SELECT sf_account_id
+                FROM   crm_imp_person_accounts
+                WHERE  _batch_id            = %s
+                  AND  sf_account_id        IS NOT NULL
+                  AND  sf_person_contact_id IS NULL
+                """,
+                (batch_id,),
+            )
+        ]
+        if open_accounts:
+            print(f"  → Lade PersonContactId für {len(open_accounts)} Accounts nach")
+            contact_map = fetch_person_contact_ids(sf, open_accounts)
+            contact_pairs = [(acc_id, contact_map.get(acc_id)) for acc_id in open_accounts]
             missing = [acc for acc, c in contact_pairs if not c]
             if missing:
                 logging.error(f"{len(missing)} Accounts ohne PersonContactId (kein Person Account?): {missing[:10]}")
@@ -340,6 +362,8 @@ def main():
     print(f"\ninsert_person_accounts_bulk | end: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  → Erfolgreich (Account):  {len(inserted_pairs)}")
     print(f"  → Fehlgeschlagen:         {len(total_failed)}")
+    for err in job_errors:
+        print(f"  ✗ {err}")
 
     if total_failed:
         all_failed_path = Path(f"local_data/batch/all_failed_person_accounts_insert_{batch_id}.json")

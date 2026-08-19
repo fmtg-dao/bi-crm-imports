@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# config, mysql_client und salesforce_client_prod liegen im Repo-Root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from config import load_mysql_config
 from mysql_client import MySQLClient
 from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
@@ -6,9 +12,10 @@ from typing import Optional, Union
 import json
 import csv
 import io
+import re
 import time as time_module
 import logging
-from pathlib import Path
+from collections import Counter
 
 # --- Logging Setup ---
 log_path = Path("logs/insert_contact_point_consents_bulk.log")
@@ -168,6 +175,53 @@ def fetch_failed_records(sf: SalesforceClientCC, job_id: str) -> list[dict]:
     return list(csv.DictReader(io.StringIO(r.text)))
 
 
+SF_ID_PATTERN = re.compile(r"^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$")
+
+
+def existing_consents(sf: SalesforceClientCC, cp_ids: list[str]) -> dict[str, list[dict]]:
+    """
+    Vorhandene Consents für DIESEN Purpose+Property, je ContactPointId.
+
+    Gibt die ganzen Records zurück, nicht nur den Status: ein Mensch muss
+    OptIn-Duplikat und OptOut-Konflikt unterscheiden können.
+    """
+    bad = [c for c in cp_ids if not SF_ID_PATTERN.match(c or "")]
+    if bad:
+        raise SystemExit(f"Keine gueltigen SF-Ids in sf_cp_email_id: {bad[:10]}")
+
+    found: dict[str, list[dict]] = {}
+    for chunk in chunked(cp_ids, 200):
+        ids = ",".join(f"'{c}'" for c in chunk)
+        soql = (
+            "SELECT Id, ContactPointId, PrivacyConsentStatus, CaptureDate, "
+            "EffectiveFrom, EffectiveTo FROM ContactPointConsent "
+            f"WHERE DataUsePurposeId = '{DATA_USE_PURPOSE_ID}' "
+            f"AND Property__c = '{PROPERTY_ID}' "
+            f"AND ContactPointId IN ({ids})"
+        )
+        for rec in sf.query_all(soql).get("records", []):
+            rec.pop("attributes", None)
+            found.setdefault(rec["ContactPointId"], []).append(rec)
+    return found
+
+
+def save_skipped_rows(rows: list[dict], found: dict[str, list[dict]], batch_id: str, run_stamp: str) -> None:
+    out_path = Path(f"local_data/skipped_contact_point_consents_{batch_id}_{run_stamp}.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [
+        {
+            "row_id": r.get("row_id"),
+            "email": r.get("email"),
+            "sf_cp_email_id": r.get("sf_cp_email_id"),
+            "existing_consents": found.get(str(r.get("sf_cp_email_id")), []),
+        }
+        for r in rows
+    ]
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    print(f"  → {len(rows)} übersprungene Records gespeichert: {out_path}")
+
+
 def save_failed_records(failed: list[dict], batch_index: int, batch_id: str) -> None:
     out_path = Path(f"local_data/failed_contact_point_consents_{batch_id}_batch_{batch_index}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -196,8 +250,6 @@ def mark_consent_processed(db: MySQLClient, batch_id: str, row_ids: list[int]) -
 
 # --- Main ---
 def main():
-    import sys
-
     batch_id = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BATCH_ID
 
     print(f"insert_contact_point_consents_bulk | start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -227,23 +279,46 @@ def main():
         print("  → Keine Records zu verarbeiten. Ende.")
         return
 
-    # 2. Mapping — ContactPointId (= sf_cp_email_id) als Matchback-Key zu row_id behalten.
-    records: list[dict] = []
-    cpid_to_row_id: dict[str, int] = {}
-
-    for row in rows:
-        cp_id = row.get("sf_cp_email_id")
-        if not cp_id:
-            logging.error(f"row_id {row.get('row_id')} ohne sf_cp_email_id — übersprungen")
-            continue
-        records.append(row_to_sf_record(row))
-        cpid_to_row_id[str(cp_id)] = row["row_id"]
-
-    # 3. Salesforce Auth
+    # 2. Salesforce Auth
     cfg_sfcc = load_salesforce_cc_config_from_env()
 
     with SalesforceClientCC(cfg_sfcc) as sf:
         sf.authenticate()
+
+        # 3. Zeilen aussortieren, die für diesen Purpose+Property schon einen
+        #    Consent haben. Ohne diese Prüfung legt ein zweiter Lauf Duplikate an
+        #    und ein bestehendes OptOut bekommt zusätzlich ein OptIn.
+        #    Übersprungene Zeilen behalten _consent_processed_at = NULL, damit ein
+        #    Mensch über sie entscheidet.
+        run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        found = existing_consents(sf, [str(r["sf_cp_email_id"]) for r in rows])
+        if found:
+            skipped = [r for r in rows if str(r["sf_cp_email_id"]) in found]
+            rows = [r for r in rows if str(r["sf_cp_email_id"]) not in found]
+            optouts = sum(
+                1 for recs in found.values()
+                if any(rec["PrivacyConsentStatus"] == "OptOut" for rec in recs)
+            )
+            print(f"  → {len(skipped)} Records übersprungen, davon {optouts} mit OptOut")
+            save_skipped_rows(skipped, found, batch_id, run_stamp)
+
+        if not rows:
+            print("  → Nach der Prüfung bleibt nichts zu schreiben. Ende.")
+            return
+
+        # 4. Mapping — ContactPointId (= sf_cp_email_id) als Matchback-Key zu row_id.
+        #    Der Matchback ist nur eindeutig, wenn kein CPE zweimal vorkommt: die
+        #    Bulk-Antwort traegt keine row_id, also wuerde bei Doubletten die falsche
+        #    Zeile als verarbeitet markiert.
+        doubles = sorted(
+            cp for cp, n in Counter(str(r["sf_cp_email_id"]) for r in rows).items() if n > 1
+        )
+        if doubles:
+            raise SystemExit(f"sf_cp_email_id mehrfach im Batch, Abbruch: {doubles[:10]}")
+
+        records = [row_to_sf_record(row) for row in rows]
+        cpid_to_row_id = {str(row["sf_cp_email_id"]): row["row_id"] for row in rows}
+        print(f"  → {len(records)} Records werden geschrieben")
 
         total_failed = []
         succeeded_row_ids: list[int] = []
@@ -265,18 +340,28 @@ def main():
 
                 status = poll_job(sf, job_id)
 
-                if status.get("state") == "Failed":
-                    logging.error(f"Batch {i+1} | Job {job_id} komplett fehlgeschlagen: {status}")
+                # 'Aborted' hiess in der Ursprungsversion Erfolg: der Job wurde
+                # abgebrochen, die Records galten trotzdem als geschrieben.
+                if status.get("state") in ("Failed", "Aborted"):
+                    logging.error(f"Batch {i+1} | Job {job_id} state {status.get('state')}: {status}")
                     continue
 
                 # --- Erfolgreiche Records: ContactPointId → row_id ---
+                batch_row_ids: list[int] = []
                 if status.get("numberRecordsProcessed", 0) > status.get("numberRecordsFailed", 0):
                     succeeded = fetch_successful_records(sf, job_id)
                     for s in succeeded:
                         cp_id  = s.get("ContactPointId")
                         row_id = cpid_to_row_id.get(str(cp_id))
                         if row_id is not None:
-                            succeeded_row_ids.append(row_id)
+                            batch_row_ids.append(row_id)
+
+                # Writeback je Batch, nicht erst am Ende: bricht der Lauf ab,
+                # steht in MySQL, was in SF wirklich schon existiert.
+                if batch_row_ids:
+                    mark_consent_processed(db, batch_id, batch_row_ids)
+                    succeeded_row_ids.extend(batch_row_ids)
+                    print(f"  → {len(batch_row_ids)} Records als verarbeitet markiert")
 
                 # --- Fehlgeschlagene Records ---
                 if status.get("numberRecordsFailed", 0) > 0:
@@ -288,11 +373,6 @@ def main():
             except Exception as e:
                 logging.exception(f"Batch {i+1} | Unerwarteter Fehler")
                 print(f"  ✗ Batch {i+1} Fehler: {e}")
-
-        # 4. _consent_processed_at in MySQL setzen für erfolgreiche Records
-        if succeeded_row_ids:
-            print(f"\n  → Markiere {len(succeeded_row_ids)} Records als _consent_processed_at = NOW()")
-            mark_consent_processed(db, batch_id, succeeded_row_ids)
 
     print(f"\ninsert_contact_point_consents_bulk | end: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  → Erfolgreich:           {len(succeeded_row_ids)}")

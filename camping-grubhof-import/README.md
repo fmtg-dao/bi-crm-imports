@@ -56,6 +56,33 @@ Salesforce before starting it again.
 `CREATE INDEX` block. A mirror refresh drops every index, and the consent join then takes
 about 106 seconds instead of 3.
 
+## Changes since the run
+
+Commit `1c819cc` holds both scripts exactly as they ran. The versions in this folder now
+differ from that record in ways that change control flow, never the payload. A check that
+renders both versions against the same staging rows shows identical Salesforce fields and an
+identical CSV header.
+
+- The account query filters `_operation = 'insert'`, so an insert run cannot pick up update
+  rows staged under the same batch id.
+- A job state other than `JobComplete` counts as a failure and appears in the closing
+  summary. Both scripts still read `successfulResults` first, because a `Failed` or
+  `Aborted` job can hold records that Salesforce already committed. Discarding them would
+  create duplicates on the next run.
+- Salesforce ids reach MySQL after each bulk batch, inside one transaction per batch, and
+  every update must affect exactly one row.
+- `PersonContactId` is fetched for the batch rows that have an account id and no contact id,
+  read from MySQL rather than from the current run, so a crashed earlier run gets repaired.
+- The consent script asks Salesforce which contact points already hold a consent for this
+  purpose and property, drops those rows, and writes them to
+  `local_data/skipped_contact_point_consents_<batch>_<timestamp>.json` with the consent ids,
+  statuses, and dates. Their `_consent_processed_at` stays NULL, so a person decides. It
+  also aborts when one contact point appears twice in a batch, because the bulk response
+  carries no `row_id` and the matchback would mark the wrong row.
+
+Codex (gpt-5.6-sol) reviewed those changes and found eight problems, all fixed here. Six of
+them existed only because of the changes above.
+
 ## What we learned
 
 `ContactPointEmail` hangs off the `Individual` record, not the Contact or the Account. Join
