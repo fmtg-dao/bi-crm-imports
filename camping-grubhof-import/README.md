@@ -1,8 +1,8 @@
 # Camping Grubhof import
 
 The August 2026 upload of Camping Grubhof guests into Salesforce production, for Carmen
-Marti. This folder holds the SQL that built the batch, the two bulk scripts as configured
-for the run, and the check that settled how `ConsentKey__c` gets filled.
+Marti. This folder holds the SQL that built the batch and the two bulk scripts as
+configured for the run.
 
 The bulk scripts are copies. `post-migration-imports/` keeps the shared versions that the
 investor imports use. Both scripts carry per-run constants you edit before each run, so a
