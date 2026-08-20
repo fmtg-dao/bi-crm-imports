@@ -168,3 +168,32 @@ WHERE a.InvestCustomer__pc = 'True'
    OR a.SourceSystem__pc = 'conda'
 GROUP BY 1, 2, 3
 ORDER BY accounts DESC;
+
+-- 13. Ground truth check against the May 2026 conda export
+-- (stg_imp_invest_20260519: conda_uid, email, personaccountid, status,
+-- status_ablaufdatum, i.e. the fields InvestmentStatus__pc and
+-- InvestmentExpirationDate__pc mirror). SourceSystem__pc = 'conda' only
+-- records which import created the account, so list membership is the
+-- real investor signal, not the source field.
+--
+-- flag  status  accounts  InMayListById  InMayListByEmail
+-- True  set        6,148          5,484             5,701
+-- True  empty        574              3                 4
+-- False set          335              0                 3
+--
+-- The 571 hotel-sourced checkbox-only accounts are absent from the conda
+-- list: their InvestCustomer flag has no conda backing. The Owners are
+-- absent too, consistent with a deliberate separate upload. The ~450
+-- flag+status accounts unmatched by email are later joiners or list churn;
+-- a fresh conda export would settle them.
+SELECT
+  a.InvestCustomer__pc AS InvestCustomer,
+  (a.InvestmentStatus__pc IS NOT NULL AND a.InvestmentStatus__pc <> '') AS HasStatus,
+  COUNT(*) AS accounts,
+  SUM(EXISTS(SELECT 1 FROM stg_imp_invest_20260519 s WHERE s.personaccountid = a.Id)) AS InMayListById,
+  SUM(EXISTS(SELECT 1 FROM stg_imp_invest_20260519 s WHERE s.email = a.PersonEmail)) AS InMayListByEmail
+FROM crm_person_account_sfid_prod a
+WHERE a.InvestCustomer__pc = 'True'
+   OR (a.InvestmentStatus__pc IS NOT NULL AND a.InvestmentStatus__pc <> '')
+GROUP BY 1, 2
+ORDER BY accounts DESC;
