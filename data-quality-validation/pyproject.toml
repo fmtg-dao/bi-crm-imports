@@ -1,0 +1,16 @@
+[project]
+name = "data-quality-validation"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastexcel",
+    "jupyterlab>=4.6.2",
+    "matplotlib>=3.11.1",
+    "nameparser>=2,<3",
+    "pandera[polars]>=0.32.1",
+    "phonenumbers>=9.0.25",
+    "polars",
+    "pycountry>=26.2.16",
+    "python-dotenv",
+    "requests",
+]
