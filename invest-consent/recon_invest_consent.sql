@@ -237,3 +237,43 @@ FROM crm_loyality_sfid_prod l
 LEFT JOIN crm_person_account_sfid_prod a ON a.PersonContactId = l.ContactId
 WHERE (l.TierName__c = 'Diamond Spirit Club' OR l.LegacyTier__c = 'Diamond Spirit Club')
   AND (a.Id IS NULL OR a.InvestCustomer__pc = 'False');
+
+-- 16. Decision-shrinking recon for the consent-write plan (2026-08-20).
+-- (a) ContactPointEmail cardinality across the 6,146 population accounts:
+--       n_cpe 0 -> 1 account | n_cpe 1 -> 6,071 | n_cpe 2 -> 74
+--     98.8% have exactly one CPE, so per-account vs per-CPE only differs
+--     for 74 accounts (148 CPEs). Supersedes the "73" in note 14, which was
+--     derived from totals (6,219 - 6,145) rather than counted directly.
+-- (b) Lead twins by email (population CPE EmailAddress vs Lead Email,
+--     lower+trim): 2,005 population accounts share an email with >= 1 lead,
+--     5,043 lead rows in total. Status of those lead rows:
+--       Processed 2,506 (2,499 linked via RelatedPersonAccount__c)
+--       New 2,498 | Open 39 (none linked)
+--     Supersedes the 1,978 in note 14 (different matching method).
+SELECT t.n_cpe, COUNT(*) AS n_accounts
+FROM (
+  SELECT a.Id, COUNT(e.Id) AS n_cpe
+  FROM crm_person_account_sfid_prod a
+  LEFT JOIN crm_cp_email_sfid_prod e ON e.PartyID__c = a.PersonContactId
+  WHERE a.InvestCustomer__pc = 'True'
+    AND a.InvestmentStatus__pc IS NOT NULL AND a.InvestmentStatus__pc <> ''
+    AND a.InvestmentStatus__pc <> 'Owner'
+  GROUP BY a.Id
+) t
+GROUP BY t.n_cpe
+ORDER BY t.n_cpe;
+
+SELECT
+  SUM(l.RelatedPersonAccount__c IS NOT NULL AND l.RelatedPersonAccount__c <> '') AS leads_linked_via_RelatedPersonAccount,
+  l.Status,
+  COUNT(*) AS lead_rows
+FROM (
+  SELECT DISTINCT LOWER(TRIM(e.EmailAddress)) AS email
+  FROM crm_person_account_sfid_prod a
+  JOIN crm_cp_email_sfid_prod e ON e.PartyID__c = a.PersonContactId
+  WHERE a.InvestCustomer__pc = 'True'
+    AND a.InvestmentStatus__pc IS NOT NULL AND a.InvestmentStatus__pc <> ''
+    AND a.InvestmentStatus__pc <> 'Owner'
+) p
+JOIN crm_person_lead_sfid_prod l ON LOWER(TRIM(l.Email)) = p.email
+GROUP BY l.Status;
