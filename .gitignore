@@ -55,3 +55,5 @@ coverage.xml
 # OS files
 .DS_Store
 Thumbs.db
+# Enthaelt Gastdaten aus dem Consent-Test
+camping-grubhof-import/consent-key-check/test_state.json
