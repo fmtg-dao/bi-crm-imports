@@ -130,3 +130,41 @@ WHERE a.InvestCustomer__pc = 'True'
   AND c.Name = 'marketing_central'
 GROUP BY c.CaptureSource, c.SourceSystem__c
 ORDER BY n DESC;
+
+-- 12. Full audit table: the population groups with CPE and consent coverage.
+-- Needs the indexes from create_mirror_indexes.sql, without them this runs
+-- for more than 10 minutes, with them 1.4s.
+--
+-- flag  status conda  accounts  HasCPE  CentralOptIn  CentralAny  PropertyOptIn
+-- True  set    yes       5,869   5,868         4,920       5,010          4,046
+-- True  empty  no          571     571           360         371            338
+-- False set    no          334     334           178         180            137
+-- True  set    no          279     279           115         116             70
+-- True  empty  yes           3       3             3           3              1
+-- False set    null          1       1             0           0              0
+--
+-- OptOut-only per group = CentralAny - CentralOptIn. No central = accounts - CentralAny.
+-- Even in the clean conda core, 949 accounts lack a central OptIn
+-- (859 no central consent, 90 opted out).
+SELECT
+  a.InvestCustomer__pc AS InvestCustomer,
+  (a.InvestmentStatus__pc IS NOT NULL AND a.InvestmentStatus__pc <> '') AS HasStatus,
+  (a.SourceSystem__pc = 'conda') AS FromConda,
+  COUNT(*) AS accounts,
+  SUM(EXISTS(SELECT 1 FROM crm_cp_email_sfid_prod e
+             WHERE e.PartyID__c = a.PersonContactId)) AS HasCPE,
+  SUM(EXISTS(SELECT 1 FROM crm_consent_sfid_prod c
+             WHERE c.AccountId = a.Id AND c.PrivacyConsentStatus = 'OptIn'
+               AND (c.Name = 'marketing_central' OR c.Name LIKE '%|0ZWTe0000000X7FOAU|CENTRAL'))) AS CentralOptIn,
+  SUM(EXISTS(SELECT 1 FROM crm_consent_sfid_prod c
+             WHERE c.AccountId = a.Id
+               AND (c.Name = 'marketing_central' OR c.Name LIKE '%|0ZWTe0000000X7FOAU|CENTRAL'))) AS CentralAny,
+  SUM(EXISTS(SELECT 1 FROM crm_consent_sfid_prod c
+             WHERE c.AccountId = a.Id AND c.PrivacyConsentStatus = 'OptIn'
+               AND c.Name = 'Marketing_Property')) AS PropertyOptIn
+FROM crm_person_account_sfid_prod a
+WHERE a.InvestCustomer__pc = 'True'
+   OR (a.InvestmentStatus__pc IS NOT NULL AND a.InvestmentStatus__pc <> '')
+   OR a.SourceSystem__pc = 'conda'
+GROUP BY 1, 2, 3
+ORDER BY accounts DESC;
