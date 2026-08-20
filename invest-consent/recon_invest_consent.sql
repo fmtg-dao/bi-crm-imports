@@ -218,3 +218,22 @@ ORDER BY accounts DESC;
 --   matching nothing in SF:             49
 -- Open question for Oleg: do the 95 excluded people outside the population
 -- get a pre-emptive invest_central OptOut, or are they simply not written?
+
+-- 15. Oleg's "214 Diamond Spirit Club members without invest fields":
+-- reproduced exactly from the loyalty mirror (2026-07-29). Of 5,409 members
+-- with tier Diamond Spirit Club (TierName__c or LegacyTier__c):
+-- 5,186 flag+status / 194 no invest fields / 17 no account / 9 flag only /
+-- 3 status only. 194+17+3 = 214 without the flag.
+-- Conda cross-check: of the 197 with an account, only 6 match the May conda
+-- export by email, 0 by gms_loyalty_id = MembershipNumber. The tier (mostly
+-- LegacyTier__c, ex-gms) is the only investor signal for the other 208.
+-- Reading: stale legacy tiers, not a gap in the consent selection. Fix the 6,
+-- hand the 208 to the loyalty owner.
+SELECT
+  SUM(a.Id IS NOT NULL) AS with_account,
+  SUM(EXISTS(SELECT 1 FROM stg_imp_invest_20260519 s WHERE s.email = a.PersonEmail)) AS in_conda_list_by_email,
+  SUM(EXISTS(SELECT 1 FROM stg_imp_invest_20260519 s WHERE s.gms_loyalty_id = l.MembershipNumber)) AS in_conda_list_by_membership
+FROM crm_loyality_sfid_prod l
+LEFT JOIN crm_person_account_sfid_prod a ON a.PersonContactId = l.ContactId
+WHERE (l.TierName__c = 'Diamond Spirit Club' OR l.LegacyTier__c = 'Diamond Spirit Club')
+  AND (a.Id IS NULL OR a.InvestCustomer__pc = 'False');
