@@ -7,7 +7,7 @@
              -> local_data/csv/20260807_camping_grubhof_cleaned.csv (146.996 x 43)
    Staging:  stg_imp_camping_grubhof_20260807 (alle Spalten VARCHAR, leer = '' nicht NULL)
    Mirrors:  crm_*_sfid_prod, alle vom 2026-08-10 (ein Snapshot, inkl. Lead),
-             via refresh_camping_comparison.py
+             via refresh_sf_mirrors.py (damals refresh_camping_comparison.py)
    Kontakt:  Carmen Marti (carmen.marti@falkensteiner.com)
 
    Entscheidungen (im Notebook kodiert):
