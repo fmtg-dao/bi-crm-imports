@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import load_mysql_config
 from mysql_client import MySQLClient
 from salesforce_client_prod import SalesforceClientCC, load_salesforce_cc_config_from_env
-from datetime import datetime, timezone, time, date
+from datetime import datetime, date
 from typing import Optional, Union
 import json
 import csv
@@ -292,7 +292,7 @@ def main():
                 sf.bulk_upload_csv(job_id, csv_data)
 
                 sf.bulk_close_job(job_id)
-                print(f"  → Job geschlossen (UploadComplete)")
+                print("  → Job geschlossen (UploadComplete)")
 
                 status = poll_job(sf, job_id)
                 state = status.get("state")

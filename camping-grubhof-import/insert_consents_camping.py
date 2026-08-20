@@ -67,15 +67,6 @@ def sf_datetime(value: Optional[Union[datetime, date]]) -> Optional[str]:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def sf_date(value: Optional[Union[date, datetime]]) -> Optional[str]:
-    """Salesforce Date-Feld erwartet YYYY-MM-DD ohne Zeit."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        value = value.date()
-    return value.isoformat()
-
-
 def row_to_sf_record(row: dict) -> dict:
     """
     Mappt eine Zeile aus crm_imp_person_accounts auf einen
@@ -336,7 +327,7 @@ def main():
                 sf.bulk_upload_csv(job_id, csv_data)
 
                 sf.bulk_close_job(job_id)
-                print(f"  → Job geschlossen (UploadComplete)")
+                print("  → Job geschlossen (UploadComplete)")
 
                 status = poll_job(sf, job_id)
 

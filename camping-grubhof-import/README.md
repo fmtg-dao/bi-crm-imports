@@ -74,10 +74,11 @@ identical CSV header.
 
 - The account query filters `_operation = 'insert'`, so an insert run cannot pick up update
   rows staged under the same batch id.
-- A job state other than `JobComplete` counts as a failure and appears in the closing
-  summary. Both scripts still read `successfulResults` first, because a `Failed` or
-  `Aborted` job can hold records that Salesforce already committed. Discarding them would
-  create duplicates on the next run.
+- A job state other than `JobComplete` counts as a failure. The account script reads
+  `successfulResults` before checking the state, because a `Failed` or `Aborted` job can
+  hold records that Salesforce already committed, and writes those ids back so a rerun
+  cannot insert them twice. The consent script skips such a job instead. Its pre-check
+  finds any committed consents on the next run and leaves them for a person to decide.
 - Salesforce ids reach MySQL after each bulk batch, inside one transaction per batch, and
   every update must affect exactly one row.
 - `PersonContactId` is fetched for the batch rows that have an account id and no contact id,
