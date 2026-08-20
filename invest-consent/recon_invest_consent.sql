@@ -63,7 +63,19 @@ GROUP BY Name
 ORDER BY n DESC
 LIMIT 15;
 
--- 7. Where the central consents of flagged accounts come from.
+-- 7. Live SOQL check of DataUsePurpose (2026-08-20, read-only, via
+-- sf_objects_download.sf_query: SELECT FIELDS(ALL) FROM DataUsePurpose).
+-- Six purposes exist, all IsActive__c = true:
+--   0ZWTe0000000X41OAE  camping_central
+--   0ZWTe0000000X5dOAE  invest_central      <- exists since 2026-04-14, ZERO consents reference it
+--   0ZWTe0000000ZyfOAE  marekting_property  <- typo record, do not use
+--   0ZWTe0000000X7FOAU  marketing_central
+--   0ZWTe0000000X8rOAE  marketing_property  (only one with RequiresHotel__c = true)
+--   0ZWTe0000000XATOA2  residences_central
+-- The May 2026 conda investor batch wrote marketing_central although
+-- invest_central already existed.
+
+-- 8. Where the central consents of flagged accounts come from.
 -- gms 4,353 / protel Reservierung 1,200 / apaleo Reservierung 910 /
 -- no source 174 / gustaffo 153 / conda 89.
 SELECT c.CaptureSource, c.SourceSystem__c, COUNT(*) AS n
