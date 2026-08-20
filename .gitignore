@@ -14,6 +14,7 @@ env/
 
 # Local data
 local_data/
+invest-consent/data/
 
 # Batch files
 *.bat

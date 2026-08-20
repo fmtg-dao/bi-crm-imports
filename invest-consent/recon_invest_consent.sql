@@ -197,3 +197,24 @@ WHERE a.InvestCustomer__pc = 'True'
    OR (a.InvestmentStatus__pc IS NOT NULL AND a.InvestmentStatus__pc <> '')
 GROUP BY 1, 2
 ORDER BY accounts DESC;
+
+-- 14. Oleg's plan (mail 2026-08-20): write invest_central consents for
+-- investors and invest prospects, OptOut for contacts on the invest
+-- exclusion list, selection based on the investment fields plus the
+-- InvestCustomer flag. Working population assumption per Arsal:
+-- InvestCustomer__pc = 'True' AND InvestmentStatus__pc set AND <> 'Owner'
+-- = 6,146 accounts (6,145 with CPE, 6,219 CPEs, 73 accounts with a 2nd CPE,
+-- one account with no CPE at all). 1,978 of the 6,146 also exist as a Lead
+-- with the same email; the consent write does not touch the Lead side.
+--
+-- Exclusion list received 2026-08-20:
+-- invest-consent/data/20260820_FMTG Invest_exclusion list Salesforce.xls
+-- (gitignored, password-protected). 111 rows, columns email/country,
+-- 108 unique emails after trim+lowercase. Matched by email
+-- (pandas, normalized, against the 2026-08-19 mirrors):
+--   in the 6,146 population:            11  -> OptOut; OptIn split 6,135 / 11
+--   matching any other person account:  46
+--   matching a lead:                    10
+--   matching nothing in SF:             49
+-- Open question for Oleg: do the 95 excluded people outside the population
+-- get a pre-emptive invest_central OptOut, or are they simply not written?
