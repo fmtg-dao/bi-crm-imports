@@ -9,14 +9,13 @@ staging happens. Each item below names the decider and a recommendation.
 
 ## Decisions
 
-**D1. Who executes the write.** Oleg's mail describes his own API job writing
-invest_central. If his job runs, this plan stops after the audit handover; if
-we write, his job must not. Decider: Oleg. Blocking for phase 5.
+**D1. Who executes the write.** RESOLVED (Arsal, 2026-08-20): we execute.
+Remaining action: tell Oleg his API job must not also write invest_central,
+or everyone gets the consent twice.
 
-**D2. Population selection, OR vs AND.** His mail reads ambiguously:
-investment fields OR the InvestCustomer flag gives 7,057, AND minus Owners
-gives 6,146. Working assumption is AND minus Owners per Arsal. Decider: Oleg.
-Blocking for phase 2.
+**D2. Population selection, OR vs AND.** RESOLVED (Arsal, 2026-08-20): the
+6,146 (InvestCustomer__pc = 'True' AND InvestmentStatus__pc set AND
+<> 'Owner').
 
 **D3. One consent per account or per ContactPointEmail.** 6,071 accounts have
 exactly one CPE, 74 have two, 1 has none (recon query 16). Camping wrote per
@@ -27,16 +26,18 @@ excluded emails are in the population (OptOut). Of the rest: 46 match other
 person accounts, 10 match only a lead, 49 match nothing. Pre-emptive OptOut
 for the 46, or ignore everyone outside the population? Decider: Oleg.
 
-**D5. ConsentKey__c and Name for a central consent.** Camping's key/property
-fields are property-consent machinery; the shared central payload omits them.
-Resolve by query: read one existing `marketing_central` ContactPointConsent
-from the mirror and copy its Name convention and whether ConsentKey__c is set.
-Recommendation: match marketing_central exactly. Decider: query, then Arsal
-nods.
+**D5. ConsentKey__c and Name for a central consent.** RESOLVED by query
+(2026-08-20). Name = the lowercase purpose name (`invest_central`), no
+Property__c, and ConsentKey__c = `{CPE Id}|0ZWTe0000000X5dOAE|CENTRAL`.
+Evidence: of 361,261 keyed marketing_central rows in the mirror, 361,260 have
+ConsentKey__c starting with the CPE Id and ending
+`|0ZWTe0000000X7FOAU|CENTRAL`; the 569k legacy gms rows carry no key, every
+newer system-written row does. Camping's live records show the same key
+structure with the property Id in the third slot.
 
-**D6. CaptureContactPointType.** Never sent by any previous import; unknown
-whether Salesforce defaulted it. Resolve by query against an existing camping
-ContactPointConsent. Decider: query.
+**D6. CaptureContactPointType.** RESOLVED by live SOQL (2026-08-20): null on
+940,117 of 940,118 marketing_central records and on the camping records.
+Salesforce does not default it. Omit the field.
 
 **D7. The one population account with no ContactPointEmail.** It cannot
 receive a consent. Create a CPE from PersonEmail first, or leave it out and
