@@ -75,7 +75,52 @@ LIMIT 15;
 -- The May 2026 conda investor batch wrote marketing_central although
 -- invest_central already existed.
 
--- 8. Where the central consents of flagged accounts come from.
+-- 8. Population cross-tab: flag x InvestmentStatus__pc x conda source.
+-- flag + status + conda        5,869   the core group
+-- flag only (gms 510, protel 55, apaleo 6)  571   flag came from hotel systems, no status
+-- no flag, status, not conda     335   see query 10
+-- flag + status, not conda       279
+-- flag + conda, no status          3
+-- Flag total 6,722. Status total 6,483.
+SELECT
+  InvestCustomer__pc AS flag,
+  (InvestmentStatus__pc IS NOT NULL AND InvestmentStatus__pc <> '') AS has_invest_status,
+  (SourceSystem__pc = 'conda') AS from_conda,
+  COUNT(*) AS n
+FROM crm_person_account_sfid_prod
+WHERE InvestCustomer__pc = 'True'
+   OR (InvestmentStatus__pc IS NOT NULL AND InvestmentStatus__pc <> '')
+   OR SourceSystem__pc = 'conda'
+GROUP BY 1, 2, 3
+ORDER BY n DESC;
+
+-- 9. InvestmentStatus__pc x flag.
+-- Ambassador 140 True / 1 False. Blue 407 True. Diamond 5,246 True / 5 False.
+-- Gold 353 True. Owner 2 True / 329 False.
+SELECT InvestmentStatus__pc, InvestCustomer__pc, COUNT(*) AS n
+FROM crm_person_account_sfid_prod
+WHERE InvestmentStatus__pc IS NOT NULL AND InvestmentStatus__pc <> ''
+GROUP BY 1, 2
+ORDER BY InvestmentStatus__pc, InvestCustomer__pc;
+
+-- 10. The 335 status-but-no-flag accounts by source.
+-- Owner: Excel Owner 122, gms 117, protel 78, apaleo 11, null 1.
+-- Diamond: gms 2, protel 2, apaleo 1. Ambassador: gms 1.
+-- Owners came in through an "Excel Owner" upload and the hotel systems,
+-- never through conda, so whether Owner counts as an invest customer is a
+-- business question, not a defect per se.
+SELECT InvestmentStatus__pc, SourceSystem__pc, COUNT(*) AS n
+FROM crm_person_account_sfid_prod
+WHERE InvestCustomer__pc = 'False'
+  AND InvestmentStatus__pc IS NOT NULL AND InvestmentStatus__pc <> ''
+GROUP BY 1, 2 ORDER BY n DESC;
+
+-- Decision context, 2026-08-20: invest_central was never written because the
+-- permission for it was missing. That permission now exists, so the plan is
+-- to write invest_central as an ADDITIONAL consent for invest customers and
+-- leave marketing_central untouched. Audit first, write later.
+
+-- 11. Where the central consents of flagged accounts come from.
 -- gms 4,353 / protel Reservierung 1,200 / apaleo Reservierung 910 /
 -- no source 174 / gustaffo 153 / conda 89.
 SELECT c.CaptureSource, c.SourceSystem__c, COUNT(*) AS n
