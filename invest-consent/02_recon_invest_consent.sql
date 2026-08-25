@@ -132,7 +132,7 @@ GROUP BY c.CaptureSource, c.SourceSystem__c
 ORDER BY n DESC;
 
 -- 12. Full audit table: the population groups with CPE and consent coverage.
--- Needs the indexes from create_mirror_indexes.sql, without them this runs
+-- Needs the indexes from 01_create_mirror_indexes.sql, without them this runs
 -- for more than 10 minutes, with them 1.4s.
 --
 -- flag  status conda  accounts  HasCPE  CentralOptIn  CentralAny  PropertyOptIn
