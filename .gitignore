@@ -56,3 +56,5 @@ coverage.xml
 # OS files
 .DS_Store
 Thumbs.db
+# Data-quality validation source files (PII)
+data-quality-validation/data/
