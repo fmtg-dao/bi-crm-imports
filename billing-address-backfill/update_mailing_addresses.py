@@ -32,9 +32,19 @@ logging.basicConfig(
 
 # --- Constants ---
 OBJECT_NAME = "Account"
-BATCH_SIZE = 5000
+# 20.000 statt der ueblichen 5.000: Bulk 2.0 teilt serverseitig ohnehin in
+# 200er-Chunks, weniger Jobs = weniger Poll-Leerlauf bei 732k Records
+# (~37 Jobs statt ~147). Writeback bleibt je Job, Resume bleibt erhalten.
+BATCH_SIZE = 20000
 POLL_INTERVAL_SEC = 10
-MAX_POLL_ATTEMPTS = 60
+# 30 Minuten je Job: bei Account-Updates feuern Trigger/Flows, unter Last
+# kann ein Job lange queuen. Ein Timeout hier zaehlt als Job-Fehler und
+# bricht den Lauf nach MAX_CONSECUTIVE_JOB_ERRORS ab.
+MAX_POLL_ATTEMPTS = 180
+
+# Systemischer Fehler (Field-Level-Security, Validation Rule, Token tot):
+# nicht stur alle Jobs durchnudeln, sondern nach N Fehlern in Folge abbrechen.
+MAX_CONSECUTIVE_JOB_ERRORS = 3
 
 # Staging-Spalte -> Salesforce-Feld. Quelle in der Staging-Tabelle sind die
 # Billing*-Werte (address = BillingStreet, country = BillingCountryCode__c,
@@ -50,8 +60,11 @@ FIELD_MAP = {
 def row_to_sf_record(row: dict) -> dict:
     """
     Mappt eine Staging-Zeile auf ein Account-Update per Id. Leere/NULL-Felder
-    werden ENTFERNT statt leer mitgeschickt: bei einem Bulk-API-UPDATE bedeutet
-    eine leere CSV-Zelle "Feld leeren", eine fehlende Spalte "nicht anfassen".
+    werden ENTFERNT. Bulk API 2.0 IGNORIERT leere CSV-Zellen beim Update
+    (#N/A waere das explizite NULL, siehe sf-object-model-gotchas) — wir
+    lassen sie trotzdem nie entstehen (group_by_signature), damit ein CSV
+    aus local_data auch ueber SOAP-Wege (Inspector-Import: leer = LOESCHEN)
+    gefahrlos bleibt und die Semantik nirgends von der API-Wahl abhaengt.
     """
     record = {"Id": row.get("sf_account_id")}
     for col, sf_field in FIELD_MAP.items():
@@ -65,7 +78,8 @@ def group_by_signature(records: list[dict]) -> dict[tuple, list[dict]]:
     """
     Gruppiert Records nach der Menge ihrer belegten Felder. Jede Gruppe wird
     als eigener Bulk-Job mit exakt diesen Spalten geschickt, damit NIE eine
-    leere Zelle im CSV steht (leere Zelle = Feld wird in SF geleert).
+    leere Zelle im CSV steht (Bulk 2.0 wuerde sie ignorieren, SOAP-basierte
+    Wege wuerden das Feld leeren — so ist es egal, wo das CSV landet).
     """
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for r in records:
@@ -87,7 +101,7 @@ def records_to_csv(records: list[dict]) -> str:
             raise SystemExit(f"Record mit abweichenden Spalten im CSV: {sorted(r)} vs {all_keys}")
 
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=all_keys, extrasaction="ignore", lineterminator="\n")
+    writer = csv.DictWriter(buf, fieldnames=all_keys, lineterminator="\n")
     writer.writeheader()
     for record in records:
         writer.writerow(record)
@@ -151,8 +165,10 @@ def accounts_with_mailing_street(sf: SalesforceClientCC, account_ids: list[str])
     if bad:
         raise SystemExit(f"Keine gueltigen SF-Ids in sf_account_id: {bad[:10]}")
 
+    # 400 Ids je Chunk: die SOQL geht als GET raus, bei 500 Ids liegt die URI
+    # schon nahe an der 16.384-Zeichen-Grenze von Salesforce.
     found: set[str] = set()
-    for chunk in chunked(account_ids, 500):
+    for chunk in chunked(account_ids, 400):
         ids = ",".join(f"'{a}'" for a in chunk)
         soql = (
             "SELECT Id FROM Account "
@@ -163,28 +179,30 @@ def accounts_with_mailing_street(sf: SalesforceClientCC, account_ids: list[str])
     return found
 
 
+def write_json(out_path: Path, payload) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+
+
 def save_skipped_rows(rows: list[dict], batch_id: str, run_stamp: str) -> None:
     out_path = REPO_ROOT / f"local_data/skipped_billing_backfill_{batch_id}_{run_stamp}.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     payload = [
         {
             "row_id": r.get("row_id"),
             "sf_account_id": r.get("sf_account_id"),
             "email": r.get("email"),
-            "reason": "PersonMailingStreet inzwischen live belegt",
+            "reason": "PersonMailingStreet inzwischen belegt (live oder frueherer Lauf)",
         }
         for r in rows
     ]
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
+    write_json(out_path, payload)
     print(f"  -> {len(rows)} uebersprungene Records gespeichert: {out_path}")
 
 
 def save_failed_records(failed: list[dict], job_index: int, batch_id: str) -> None:
     out_path = REPO_ROOT / f"local_data/failed_billing_backfill_{batch_id}_job_{job_index}.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        json.dump(failed, f, indent=2)
+    write_json(out_path, failed)
     print(f"  -> {len(failed)} fehlgeschlagene Records gespeichert: {out_path}")
 
 
@@ -192,16 +210,42 @@ def save_failed_records(failed: list[dict], job_index: int, batch_id: str) -> No
 def mark_billing_processed(db: MySQLClient, batch_id: str, row_ids: list[int]) -> None:
     if not row_ids:
         return
-    # In Schueben, damit das SQL-Statement bei 5.000 Ids nicht explodiert.
-    for chunk in chunked(row_ids, 1000):
-        placeholders = ",".join(["%s"] * len(chunk))
-        sql = f"""
-            UPDATE crm_imp_person_accounts
-            SET    _billing_processed_at = NOW()
-            WHERE  _batch_id = %s
-              AND  row_id    IN ({placeholders})
-        """
-        db.execute(sql, [batch_id, *chunk])
+    # Eine Transaktion je Job: entweder ist der ganze Job-Writeback drin
+    # oder gar nicht, kein halb committeter Stand bei einem Crash mittendrin.
+    with db.transaction() as conn:
+        for chunk in chunked(row_ids, 1000):
+            placeholders = ",".join(["%s"] * len(chunk))
+            sql = f"""
+                UPDATE crm_imp_person_accounts
+                SET    _billing_processed_at = NOW()
+                WHERE  _batch_id = %s
+                  AND  row_id    IN ({placeholders})
+            """
+            db.execute(sql, [batch_id, *chunk], conn=conn)
+
+
+def mark_skipped_excluded(db: MySQLClient, batch_id: str, row_ids: list[int], run_stamp: str) -> None:
+    """
+    Live uebersprungene Zeilen als _excluded markieren, damit sie aus der
+    offenen Menge verschwinden: sonst waere 'still_open = 0' in Phase 6 nie
+    erreichbar und jeder Re-Run wuerde sie erneut pruefen. Achtung, bewusste
+    Unschaerfe: nach einem Crash zwischen SF-Write und Writeback landen auch
+    UNSERE eigenen, schon geschriebenen Records hier — inhaltlich korrekt
+    (das Ziel ist belegt), nur der Autor ist nicht unterscheidbar.
+    """
+    if not row_ids:
+        return
+    with db.transaction() as conn:
+        for chunk in chunked(row_ids, 1000):
+            placeholders = ",".join(["%s"] * len(chunk))
+            sql = f"""
+                UPDATE crm_imp_person_accounts
+                SET    _excluded = 1,
+                       _exclude_reason = %s
+                WHERE  _batch_id = %s
+                  AND  row_id    IN ({placeholders})
+            """
+            db.execute(sql, [f"mailing_present_{run_stamp}", batch_id, *chunk], conn=conn)
 
 
 # --- Main ---
@@ -219,9 +263,12 @@ def main():
     cfg_mysql = load_mysql_config()
     db = MySQLClient(cfg_mysql)
 
+    # Nur die benoetigten Spalten: die Tabelle ist ~60 Spalten breit, bei
+    # 732k Zeilen macht SELECT * daraus mehrere GB Python-Dicts.
     rows = db.fetch_all(
         """
-        SELECT *
+        SELECT row_id, sf_account_id, email,
+               address, city, postal_code, country
         FROM   crm_imp_person_accounts
         WHERE  _batch_id             = %s
           AND  _operation            = 'update'
@@ -280,6 +327,9 @@ def main():
             rows = [r for r in rows if str(r["sf_account_id"]) not in taken]
             print(f"  -> {len(skipped)} Records uebersprungen (Ziel nicht mehr leer)")
             save_skipped_rows(skipped, batch_id, run_stamp)
+            # Aus der offenen Menge nehmen, sonst ist Phase 6 (still_open = 0)
+            # nie erreichbar und jeder Re-Run prueft dieselben Ids erneut.
+            mark_skipped_excluded(db, batch_id, [r["row_id"] for r in skipped], run_stamp)
 
         if not rows:
             print("  -> Nach dem Live-Check bleibt nichts zu schreiben. Ende.")
@@ -291,8 +341,9 @@ def main():
         print(f"  -> {len(records):,} Records in {len(groups)} Signatur-Gruppen werden geschrieben")
 
         total_failed = []
-        succeeded_row_ids: list[int] = []
+        n_succeeded = 0
         batch_errors = 0
+        consecutive_errors = 0
         job_index = 0
         n_jobs = sum((len(recs) + BATCH_SIZE - 1) // BATCH_SIZE for recs in groups.values())
 
@@ -301,7 +352,16 @@ def main():
                 job_index += 1
                 print(f"\nJob {job_index}/{n_jobs} | {len(batch_records)} Records | Felder: {list(sig)}")
 
+                if consecutive_errors >= MAX_CONSECUTIVE_JOB_ERRORS:
+                    raise SystemExit(
+                        f"{consecutive_errors} Job-Fehler in Folge - systemisches Problem "
+                        f"(Berechtigung? Token? Validation Rule?), Abbruch vor Job {job_index}"
+                    )
+
                 try:
+                    # Der Lauf dauert Stunden, Client-Credentials-Tokens laufen
+                    # typischerweise nach 2h ab: vor jedem Job frisch anmelden.
+                    sf.authenticate()
                     job_id = sf.bulk_create_update_job(OBJECT_NAME)
                     print(f"  -> Job erstellt: {job_id}")
 
@@ -332,7 +392,7 @@ def main():
                     # steht in MySQL, was in SF wirklich schon geschrieben ist.
                     if job_row_ids:
                         mark_billing_processed(db, batch_id, job_row_ids)
-                        succeeded_row_ids.extend(job_row_ids)
+                        n_succeeded += len(job_row_ids)
                         print(f"  -> {len(job_row_ids)} Records als verarbeitet markiert")
 
                     # failedResults auch bei Failed/Aborted lesen: ohne die
@@ -347,21 +407,23 @@ def main():
 
                     if job_failed:
                         batch_errors += 1
+                        consecutive_errors += 1
+                    else:
+                        consecutive_errors = 0
 
                 except Exception as e:
                     logging.exception(f"Job {job_index} | Unerwarteter Fehler")
                     print(f"  x Job {job_index} Fehler: {e}")
                     batch_errors += 1
+                    consecutive_errors += 1
 
     print(f"\nupdate_mailing_addresses | end: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  -> Erfolgreich:    {len(succeeded_row_ids):,}")
+    print(f"  -> Erfolgreich:    {n_succeeded:,}")
     print(f"  -> Fehlgeschlagen: {len(total_failed):,}")
 
     if total_failed:
         all_failed_path = REPO_ROOT / f"local_data/batch/all_failed_billing_backfill_{batch_id}.json"
-        all_failed_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(all_failed_path, "w") as f:
-            json.dump(total_failed, f, indent=2)
+        write_json(all_failed_path, total_failed)
         print(f"  -> Alle Fehler gespeichert: {all_failed_path}")
 
     # Exit != 0 bei jedem Problem: der Notebook-Runner prueft nur den
