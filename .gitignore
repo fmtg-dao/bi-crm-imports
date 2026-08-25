@@ -14,6 +14,7 @@ env/
 
 # Local data
 local_data/
+invest-consent/data/
 
 # Batch files
 *.bat
@@ -55,3 +56,5 @@ coverage.xml
 # OS files
 .DS_Store
 Thumbs.db
+# Data-quality validation source files (PII)
+data-quality-validation/data/
