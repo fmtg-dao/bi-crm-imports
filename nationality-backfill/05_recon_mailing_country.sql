@@ -88,8 +88,10 @@ SELECT
 FROM crm_person_account_sfid_prod
 WHERE InvestCustomer__pc = 'True';
 
--- Observed (mirror 2026-08-26, post-refresh):
---   <PASTE>
+-- Observed (mirror 2026-08-26 13:51, post-refresh, 1,496,521 rows):
+--   invest_total 6,158 | block_empty 4,916 | pop_a 4,467 | pop_b 440
+--   pop_c 1,230 | already_name 4 | pop_d 8 | unreachable 9
+--   (4,467 + 440 + 1,230 + 4 + 8 + 9 = 6,158 ✓ populations partition cleanly)
 
 
 -- -----------------------------------------------------------------------------
@@ -113,7 +115,10 @@ GROUP BY 2
 ORDER BY 1, 3 DESC;
 
 -- Observed:
---   <PASTE>
+--   billing: AT 4,321 | DE 1,294 | CH 52 | CZ 3 | AU/HR/AE/IT/HU/SK/FR 1 each
+--   mailing: AT 958 | DE 255 | CH 13 | FR/HR/CZ/SK 1 each
+--   All 13 distinct codes are keys in COUNTRY_NAMES - full coverage, no
+--   FL/XX/UK in the invest scope.
 
 
 -- -----------------------------------------------------------------------------
@@ -143,11 +148,25 @@ WHERE InvestCustomer__pc = 'True'
 GROUP BY 1 WITH ROLLUP;
 
 -- Observed:
---   <PASTE>
-
--- Note: A rows with an EMPTY BillingCountryCode__c still get street/city/postal
--- copied - just no country. They keep the block-from-one-source guarantee; the
--- country simply stays unknown rather than guessed.
+--   AT 3,468 (mismatch 79, postal_empty 195) | DE 938 (mismatch 29, empty 39)
+--   CH 43 (0/4) | code empty 11 | AE/AU/CZ/HU/IT/SK 1-2 each, clean
+--   total pop_a 4,467, postal_mismatch 108, postal_empty 239
+--
+-- Eyeballed the 108 mismatches: they are NOT postal-format quirks, they are
+-- genuinely WRONG BillingCountryCode__c values - e.g. 'AT' with Wolfsburg/
+-- Berlin/Muenchen (German 5-digit postals), 'DE' with Wien/Eisenstadt
+-- (Austrian 4-digit), 'AT' with Zadar (HR), 'DE' with Rotterdam '3037BB' (NL).
+-- The Vienna/Germany problem already exists in the SOURCE for these rows.
+--
+-- DECISION: the 108 mismatch rows copy street/city/postal (internally
+-- consistent with each other) but the country is SUPPRESSED (stays empty) and
+-- the rows land in local_data/invest_mailing_suspect_country_review.csv.
+-- An address without a country claim is honest; an address with a
+-- contradicting country is the exact failure this project exists to prevent.
+--
+-- Postal_empty (239) is NOT evidence of a wrong country - those keep theirs.
+-- A rows with an EMPTY BillingCountryCode__c (11) still get street/city/postal
+-- copied - just no country. Both keep the block-from-one-source guarantee.
 
 
 -- -----------------------------------------------------------------------------
@@ -163,8 +182,11 @@ WHERE InvestCustomer__pc = 'True'
   AND BillingCountryCode__c IS NOT NULL AND BillingCountryCode__c <> ''
   AND UPPER(PersonMailingCountry) <> UPPER(BillingCountryCode__c);
 
--- Observed:
---   <PASTE>
+-- Observed: 23 accounts - billing AT -> mailing DE (21, all with German
+-- mailing cities: Oberasbach, Altoetting, Wuppertal, Muenchen, ...),
+-- AT -> CH (1, Baar), DE -> HR (1). The mailing value is consistent with its
+-- own city in every case; billing is the wrong side here too. Mailing wins,
+-- population C only converts its format (code -> name).
 
 
 -- -----------------------------------------------------------------------------
@@ -184,5 +206,8 @@ WHERE InvestCustomer__pc = 'True'
        OR (PersonMailingCity       IS NOT NULL AND PersonMailingCity       <> '')
        OR (PersonMailingPostalCode IS NOT NULL AND PersonMailingPostalCode <> ''));
 
--- Observed:
---   <PASTE>
+-- Observed: 8 accounts. 7 of them have a mailing street/city that MATCHES the
+-- billing city (same address, country just never carried over) - candidates
+-- for a small manual fix. 1 (001Te00000ZsgvQIAR) has an Austrian mailing
+-- address (Lengau) with billing code HR / billing city Zadar - exactly the
+-- cross-source mismatch the staging must never create. All 8 stay out.
