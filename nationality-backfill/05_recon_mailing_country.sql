@@ -131,9 +131,14 @@ ORDER BY 1, 3 DESC;
 
 SELECT BillingCountryCode__c AS code,
        COUNT(*) AS n,
+       -- The <> '' guards keep this expression IDENTICAL to SUSPECT_COUNTRY in
+       -- 06: an empty postal is counted under postal_empty, never as a
+       -- mismatch, regardless of whether the mirror encodes empty as NULL or ''.
        SUM(CASE
-             WHEN BillingCountryCode__c IN ('AT','CH') THEN BillingPostalCode NOT REGEXP '^[0-9]{4}$'
-             WHEN BillingCountryCode__c IN ('DE','IT') THEN BillingPostalCode NOT REGEXP '^[0-9]{5}$'
+             WHEN BillingCountryCode__c IN ('AT','CH')
+               THEN BillingPostalCode <> '' AND BillingPostalCode NOT REGEXP '^[0-9]{4}$'
+             WHEN BillingCountryCode__c IN ('DE','IT')
+               THEN BillingPostalCode <> '' AND BillingPostalCode NOT REGEXP '^[0-9]{5}$'
              ELSE 0
            END) AS postal_mismatch,
        SUM(BillingPostalCode IS NULL OR BillingPostalCode = '') AS postal_empty,
