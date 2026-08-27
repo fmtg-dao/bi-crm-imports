@@ -97,7 +97,14 @@ class SalesforceClientCC:
             "client_secret": self.cfg.client_secret,
         }
 
-        r = self._client.post(self.cfg.token_url, data=data)
+        # Expliziter Content-Type: nach dem ersten authenticate() steht der
+        # Client-Default auf application/json, damit wuerde der Form-Body des
+        # Token-Requests unlesbar (unsupported_grant_type bei jedem Re-Auth).
+        r = self._client.post(
+            self.cfg.token_url,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
         if r.status_code != 200:
             raise RuntimeError(f"Salesforce auth failed ({r.status_code}): {r.text}")
 
