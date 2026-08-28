@@ -15,6 +15,9 @@ env/
 # Local data
 local_data/
 
+# Source data exports in job directories (PII, never committed)
+invest-preregistration/*.csv
+
 # Batch files
 *.bat
 
